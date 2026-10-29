@@ -1333,8 +1333,8 @@ PAGE = r"""<!DOCTYPE html>
   :root { --fg:#ffffff; --bg:#000000; }
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); }
-  body { display:flex; flex-direction:column; font-family: Arial, sans-serif; }
-  #bar { max-height:46vh; overflow-y:auto; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:6px 10px;
+  body { display:flex; flex-direction:column; font-family: Arial, sans-serif; overflow-y:auto; }
+  #bar { flex:none; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:6px 10px;
          background:#222; color:#eee; font:13px Arial, sans-serif; border-bottom:1px solid #444; }
   #bar label { display:flex; align-items:center; gap:5px; white-space:nowrap; }
   #bar select, #bar input[type=number], #bar button { font:13px Arial, sans-serif; }
@@ -1345,11 +1345,11 @@ PAGE = r"""<!DOCTYPE html>
   #info { margin-left:auto; display:flex; gap:12px; align-items:center; }
   #dot { width:10px; height:10px; border-radius:50%; background:#c33; display:inline-block; }
   #dot.on { background:#3c3; }
-  #main { flex:1; overflow:auto; padding:2vh 3vw; }
+  #main { flex:1 0 50vh; overflow:auto; padding:2vh 3vw; }   /* barra aperta: la pagina scende, le note restano almeno meta schermo */
   #notes { white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:plaintext; text-align:start;
            font-family: Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Noto Naskh Arabic", sans-serif; font-size:48px; line-height:1.3; letter-spacing:0; }
   #notes.wait { opacity:.5; font-style:italic; }
-  #ctl { display:flex; gap:10px; align-items:stretch; padding:8px 10px; background:#222;
+  #ctl { flex:none; position:sticky; bottom:0; z-index:6; display:flex; gap:10px; align-items:stretch; padding:8px 10px; background:#222;
          border-top:1px solid #444; color:#eee; font:15px Arial, sans-serif; }
   #ctl button { font:600 20px Arial, sans-serif; padding:12px 8px; cursor:pointer; border-radius:8px;
                 border:1px solid #666; background:#333; color:#fff; }

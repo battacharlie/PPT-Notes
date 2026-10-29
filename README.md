@@ -19,6 +19,9 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 **Releases** → `mefistofele.exe` (Windows 10/11 + PowerPoint) e `mefistofele-mac.zip` (macOS 12+ + PowerPoint per Mac). Ogni release contiene anche `SHA256SUMS.txt` e i sei manuali `MANUAL-xx.md`.
 Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente, in fondo **mefistofele-windows** e **mefistofele-mac**.
 
+## Novità della 3.2 / What's new in 3.2
+- Pagina remota: con la barra aperta è sempre visibile per intero e il resto della pagina scende / Remote page: the open toolbar is fully visible and the rest of the page moves down.
+
 ## Novità della 3.1 / What's new in 3.1
 - **Lingue / Languages**: English (predefinita / default), Italiano, Français, Español, العربية, 中文. Si sceglie nella pagina di gestione e vale per tutti i telefoni e per la guida / chosen on the management page, applies to all phones and to the guide.
 - **Manuale in sei lingue / Manual in six languages** (`docs/MANUAL-en|it|fr|es|ar|zh.md`), anche dentro il programma (pulsante Guida) / also inside the program (Guide button).
