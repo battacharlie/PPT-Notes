@@ -6,12 +6,22 @@ su una pagina web raggiungibile da qualsiasi dispositivo della rete locale (smar
 Ideato e sviluppato da [www.andreabattaglioli.it](https://www.andreabattaglioli.it) ·
 Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 
+## Novità della versione 2.0
+All'avvio si apre nel browser del PC la **pagina di avvio** (`http://localhost:8080/start`):
+- il **QR** grande da inquadrare con il telefono;
+- le caselle per scegliere **cosa vedranno i telefoni**: Stile del testo, Comandi slide, Slide in onda, Slide successiva;
+- il **PIN** per i comandi (facoltativo);
+- l'elenco delle presentazioni in corso.
+
+Le scelte si salvano (file `reMNote.json` accanto all'exe) e arrivano subito ai telefoni già collegati. La pagina di avvio
+si apre solo dal PC dove gira reMNote: dai telefoni non si possono cambiare le impostazioni.
+
 ## Funzioni (Windows)
 - Note sincronizzate con la slide corrente (aggiornamento ~10 volte al secondo).
-- QR code in console e su `http://localhost:8080/qr` per aprire le note dallo smartphone.
+- QR code in console e nella pagina di avvio `http://localhost:8080/start` per aprire le note dallo smartphone.
 - Più presentazioni aperte insieme: ogni dispositivo sceglie quale seguire.
 - Barra stile: font, dimensione, colore testo, colore sfondo, interlinea, spaziatura caratteri (salvata per dispositivo).
-- Comandi avanti / indietro / vai a slide dal telefono, con PIN opzionale (`--pin 1234`) o disattivabili (`--no-control`).
+- Comandi avanti / indietro / vai a slide dal telefono, con PIN opzionale (dalla pagina di avvio o `--pin 1234`) o disattivabili (`--no-control`).
 - Pulsanti per mostrare/nascondere: **Stile testo** (comandi del testo), **Comandi** (avanzamento slide),
   **Slide in onda** e **Slide successiva** (anteprima delle due slide sopra le note). Ogni dispositivo ricorda le sue scelte.
 

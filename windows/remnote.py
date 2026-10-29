@@ -67,7 +67,11 @@ CREDITS_HTML = (
     '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
 )
 
-STATE = {"pin_required": False, "control": True, "shows": []}
+UI_KEYS = ("style", "ctl", "cur", "next")   # stile testo, comandi avanzamento, slide in onda, slide successiva
+UI = {k: True for k in UI_KEYS}              # cosa possono vedere i telefoni (scelto dal PC)
+NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
+SETTINGS_LOCK = threading.Lock()
+STATE = {"pin_required": False, "control": True, "ui": dict(UI), "shows": []}
 VERSION = 0
 COND = threading.Condition()
 CMDQ = queue.Queue()
@@ -82,13 +86,82 @@ DEMO_MODE = False
 def set_state(shows):
     """Aggiorna lo stato e avvisa i client solo se qualcosa e' cambiato."""
     global VERSION
-    new = {"pin_required": bool(PIN), "control": CONTROL, "shows": shows}
+    new = {"pin_required": bool(PIN), "control": CONTROL, "ui": ui_state(), "shows": shows}
     with COND:
         if new != STATE:
             STATE.clear()
             STATE.update(new)
             VERSION += 1
             COND.notify_all()
+
+
+def ui_state():
+    """Cosa mostrare sui telefoni: la scelta fatta dal PC, con i comandi spenti se serve."""
+    ui = dict(UI)
+    ui["ctl"] = bool(UI["ctl"]) and not NO_CONTROL
+    return ui
+
+
+def refresh_state():
+    """Rimanda lo stato ai telefoni dopo un cambio di impostazioni (senza aspettare PowerPoint)."""
+    global CONTROL
+    CONTROL = ui_state()["ctl"]
+    with COND:
+        shows = list(STATE.get("shows", []))
+    set_state(shows)
+
+
+def settings_paths():
+    """Dove salvare le impostazioni: accanto all'exe, poi nella cartella temporanea."""
+    return [os.path.join(os.path.dirname(p), "reMNote.json") for p in log_paths()]
+
+
+def load_settings():
+    """Legge le impostazioni salvate (se ci sono). Ritorna il PIN salvato."""
+    for pth in settings_paths():
+        try:
+            with open(pth, encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        ui = data.get("ui", {})
+        for k in UI_KEYS:
+            if isinstance(ui.get(k), bool):
+                UI[k] = ui[k]
+        return str(data.get("pin", ""))[:20]
+    return ""
+
+
+def save_settings():
+    data = json.dumps({"ui": UI, "pin": PIN}, ensure_ascii=False, indent=1)
+    for pth in settings_paths():
+        try:
+            with open(pth, "w", encoding="utf-8") as f:
+                f.write(data)
+            return pth
+        except Exception:
+            continue
+    log("Impostazioni non salvate: nessuna cartella scrivibile")
+    return ""
+
+
+def apply_settings(body):
+    """Applica le scelte arrivate dalla pagina di avvio. Ritorna False se non valide."""
+    global PIN
+    ui = body.get("ui")
+    if not isinstance(ui, dict) or any(k in ui and not isinstance(ui[k], bool) for k in UI_KEYS):
+        return False
+    pin = str(body.get("pin", PIN))
+    if len(pin) > 20 or any(c in pin for c in "\r\n\t"):
+        return False
+    with SETTINGS_LOCK:
+        for k in UI_KEYS:
+            if k in ui:
+                UI[k] = ui[k]
+        PIN = pin.strip()
+        save_settings()
+    refresh_state()
+    return True
 
 
 def snapshot():
@@ -542,19 +615,79 @@ def qr_console(text):
     return "\n".join(lines)
 
 
-QR_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>QR note relatore</title>
+START_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>reMNote - avvio</title>
 <link rel="icon" type="image/png" href="/static/remnote-64.png">
-<style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
-justify-content:center;background:#fff;font-family:Arial,sans-serif;color:#000;text-align:center}
-img.qr{width:min(70vw,70vh);height:min(70vw,70vh)}p{font-size:28px;margin:10px}
-.hd{display:flex;align-items:center;justify-content:center}
-.hd img{width:130px;height:130px}.cr{font-size:14px;color:#444;line-height:1.5}
-.cr a{color:#14434d}.cr img{vertical-align:middle;margin-right:4px}</style></head>
-<body><div class="hd"><img src="/static/remnote-192.png" alt="reMNote"></div>
-<img class="qr" src="/qr.svg" alt="QR"><p>__URL__</p>
-<p style="font-size:16px">Inquadra con lo smartphone (stessa rete Wi-Fi)</p>
-<div class="cr">__CREDITS__</div></body></html>"""
+<style>
+:root{--bg:#f4f6f7;--card:#fff;--ink:#14262b;--mut:#5b6b70;--acc:#14434d;--ok:#1b7f4a;--bd:#d9e0e2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Arial,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:20px 16px 28px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+header img{width:64px;height:64px}h1{font-size:26px;margin:0}header small{color:var(--mut);display:block;margin-top:2px}
+.grid{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:18px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px}
+.card h2{font-size:17px;margin:0 0 12px}
+.qr{text-align:center}.qr img{width:100%;max-width:320px;height:auto}
+.url{font-size:20px;font-weight:700;word-break:break-all;margin:8px 0 2px}.hint{color:var(--mut);font-size:14px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:11px 4px;border-bottom:1px solid var(--bd);cursor:pointer}
+.opt:last-of-type{border-bottom:0}.opt input{width:22px;height:22px;margin-top:2px;accent-color:var(--acc);flex:none}
+.opt b{display:block;font-size:16px}.opt span{color:var(--mut);font-size:14px}
+.pin{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.pin input{font-size:18px;padding:8px 10px;width:150px;border:1px solid var(--bd);border-radius:8px}
+button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer}
+#saved{color:var(--ok);font-size:14px;min-height:20px;margin-top:10px}
+#shows{margin:0;padding-left:18px;color:var(--ink)}#shows li{margin:2px 0}
+.cr{font-size:13px;color:var(--mut);line-height:1.6;text-align:center;margin-top:22px}.cr a{color:var(--acc)}
+.cr img{vertical-align:middle;margin-right:4px}.links{margin-top:10px;font-size:14px}.links a{color:var(--acc)}
+</style></head><body><div class="wrap">
+<header><img src="/static/remnote-192.png" alt="reMNote"><div><h1>reMNote</h1>
+<small>Versione __VERSION__ &middot; Note del relatore sul telefono</small></div></header>
+<div class="grid">
+<div class="card qr"><h2>1. Inquadra il QR</h2><img src="/qr.svg" alt="QR">
+<div class="url">__URL__</div><div class="hint">Telefono collegato alla stessa rete Wi-Fi del PC</div></div>
+<div class="card"><h2>2. Cosa vuoi far vedere sui telefoni</h2>
+<label class="opt"><input type="checkbox" id="u_style"><div><b>Stile del testo</b><span>Font, dimensione, colori, interlinea e spaziatura</span></div></label>
+<label class="opt"><input type="checkbox" id="u_ctl"><div><b>Comandi slide</b><span>Avanti, indietro e vai a slide</span></div></label>
+<label class="opt"><input type="checkbox" id="u_cur"><div><b>Slide in onda</b><span>Immagine della slide che il pubblico sta vedendo</span></div></label>
+<label class="opt"><input type="checkbox" id="u_next"><div><b>Slide successiva</b><span>Immagine della slide che arriva dopo</span></div></label>
+<div class="pin"><label for="pin"><b>PIN per i comandi</b> (facoltativo)</label>
+<input id="pin" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="nessuno"><button id="savepin">Salva PIN</button></div>
+<div id="saved"></div>
+<h2 style="margin-top:14px">Presentazioni in corso</h2><ul id="shows"><li>nessuna: apri una presentazione in PowerPoint</li></ul>
+<div class="links"><a href="/" target="_blank">Apri la pagina delle note su questo PC</a> &middot; <a href="/diagnostica" target="_blank">Diagnostica</a></div>
+</div></div>
+<div class="cr">__CREDITS__</div></div>
+<script>
+const $ = id => document.getElementById(id), K = ["style","ctl","cur","next"];
+let timer = null;
+function flash(t){ $("saved").textContent = t; clearTimeout(timer); timer = setTimeout(() => { $("saved").textContent = ""; }, 2500); }
+async function save(){
+  const ui = {}; K.forEach(k => { ui[k] = $("u_" + k).checked; });
+  try {
+    const r = await fetch("/settings", { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim() }) });
+    flash(r.ok ? "Salvato: i telefoni collegati si aggiornano subito" : "Impostazioni non valide");
+  } catch(e) { flash("Programma non raggiungibile"); }
+}
+K.forEach(k => { $("u_" + k).onchange = save; });
+$("savepin").onclick = save;
+$("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
+fetch("/settings.json").then(r => r.json()).then(d => {
+  K.forEach(k => { $("u_" + k).checked = d.ui[k] !== false; });
+  $("u_ctl").disabled = !!d.no_control;
+  if (d.no_control) $("u_ctl").parentNode.querySelector("span").textContent = "Disattivati: il programma è stato avviato con --no-control";
+  $("pin").value = d.pin || "";
+}).catch(() => flash("Programma non raggiungibile"));
+function shows(){
+  fetch("/state").then(r => r.json()).then(s => {
+    const ul = $("shows"); ul.innerHTML = "";
+    if (!s.shows.length) { ul.innerHTML = "<li>nessuna: apri una presentazione in PowerPoint</li>"; return; }
+    s.shows.forEach(x => { const li = document.createElement("li"); li.textContent = x.title + " - slide " + x.index + " / " + x.total; ul.appendChild(li); });
+  }).catch(() => {});
+}
+shows(); setInterval(shows, 2000);
+</script></body></html>"""
 
 
 # -------------------------------------------------------------------- Server
@@ -563,6 +696,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+    def _is_local(self):
+        """True se la richiesta arriva dal PC stesso (le impostazioni si cambiano solo da qui)."""
+        ip = self.client_address[0]
+        return ip in ("127.0.0.1", "::1") or ip.startswith("::ffff:127.") or ip in local_ips()
 
     def _send(self, code, ctype, body):
         self.send_response(code)
@@ -609,6 +747,16 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         raw = self.rfile.read(min(length, 4096)) if length > 0 else b""
+        if path == "/settings":
+            if not self._is_local():
+                self._json(403, {"ok": False, "error": "solo dal PC"})
+                return
+            try:
+                ok = apply_settings(json.loads(raw.decode("utf-8") or "{}"))
+            except Exception:
+                ok = False
+            self._json(200 if ok else 400, {"ok": ok})
+            return
         if path != "/cmd":
             self._json(404, {"ok": False, "error": "non trovato"})
             return
@@ -668,8 +816,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, "text/html; charset=utf-8", diagnostica_page().encode("utf-8"))
         elif path == "/qr.svg":
             self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
-        elif path == "/qr":
-            self._send(200, "text/html; charset=utf-8", QR_PAGE.replace("__URL__", BASE_URL).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
+        elif path in ("/start", "/qr"):
+            if not self._is_local():
+                self._send(403, "text/plain; charset=utf-8", "Pagina di avvio: si apre solo dal PC dove gira reMNote".encode("utf-8"))
+                return
+            self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__URL__", BASE_URL)
+                       .replace("__VERSION__", APP_VERSION).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
+        elif path == "/settings.json":
+            if not self._is_local():
+                self._send(403, "text/plain; charset=utf-8", b"Solo dal PC")
+                return
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps({"ui": UI, "pin": PIN, "no_control": NO_CONTROL, "url": BASE_URL}).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))
@@ -903,7 +1061,8 @@ $("showbar").onclick = () => document.body.classList.remove("hidebar");
 apply();
 
 /* ---- stato, scelta presentazione ---- */
-let st = { shows: [], pin_required: false, control: true };
+let st = { shows: [], pin_required: false, control: true, ui: { style: true, ctl: true, cur: true, next: true } };
+const uiOn = k => !st.ui || st.ui[k] !== false;   // scelto dal PC nella pagina di avvio
 let selId = lsGet("pptSel", "");
 let lastKey = null, optKey = "";
 
@@ -956,9 +1115,9 @@ function setSlide(img, ph, on, id, index, title, emptyText) {
 }
 function updateSlides(cur) {
   const wait = "In attesa della presentazione…";
-  setSlide($("imgcur"), $("phcur"), curOn, cur ? cur.id : "", cur ? cur.index : 0, cur ? cur.title : "", wait);
+  setSlide($("imgcur"), $("phcur"), curOn && uiOn("cur"), cur ? cur.id : "", cur ? cur.index : 0, cur ? cur.title : "", wait);
   const hasNext = !!cur && cur.index < cur.total;
-  setSlide($("imgnext"), $("phnext"), nextOn, hasNext ? cur.id : "", hasNext ? cur.index + 1 : 0,
+  setSlide($("imgnext"), $("phnext"), nextOn && uiOn("next"), hasNext ? cur.id : "", hasNext ? cur.index + 1 : 0,
            cur ? cur.title : "", cur ? "Ultima slide" : wait);
 }
 ["imgcur", "imgnext"].forEach(id => {
@@ -1007,23 +1166,26 @@ $("prev").onclick = () => sendCmd("prev");
 $("go").onclick = () => { const n = parseInt($("gonum").value); if (n > 0) sendCmd("goto", n); };
 $("gonum").addEventListener("keydown", e => { if (e.key === "Enter") $("go").click(); });
 document.addEventListener("keydown", e => {
-  if (!ctlOn || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (!ctlOn || !uiOn("ctl") || st.control === false || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (["ArrowRight","ArrowDown","PageDown"," "].includes(e.key)) { e.preventDefault(); sendCmd("next"); }
   else if (["ArrowLeft","ArrowUp","PageUp"].includes(e.key)) { e.preventDefault(); sendCmd("prev"); }
 });
 /* ---- cosa mostrare: ogni dispositivo ricorda le sue scelte ---- */
 let styleOn = lsGet("pptStyle", "1") === "1";
 let ctlOn = lsGet("pptCtl", "1") === "1";
-let curOn = lsGet("pptCur", "0") === "1";
-let nextOn = lsGet("pptNext", "0") === "1";
+let curOn = lsGet("pptCur", "1") === "1";
+let nextOn = lsGet("pptNext", "1") === "1";
 function applyCtl() {
-  const allowed = st.control !== false;
+  const allowed = st.control !== false && uiOn("ctl");
   const b = document.body.classList;
-  b.toggle("nostyle", !styleOn);
+  b.toggle("nostyle", !styleOn || !uiOn("style"));
   b.toggle("noctl", !ctlOn || !allowed);
-  b.toggle("showcur", curOn);
-  b.toggle("shownext", nextOn);
+  b.toggle("showcur", curOn && uiOn("cur"));
+  b.toggle("shownext", nextOn && uiOn("next"));
+  $("styleb").style.display = uiOn("style") ? "" : "none";
   $("ctlb").style.display = allowed ? "" : "none";
+  $("curb").style.display = uiOn("cur") ? "" : "none";
+  $("nextb").style.display = uiOn("next") ? "" : "none";
   $("styleb").classList.toggle("on", styleOn);
   $("ctlb").classList.toggle("on", ctlOn);
   $("curb").classList.toggle("on", curOn);
@@ -1062,7 +1224,7 @@ connect();
 
 
 def main():
-    global BASE_URL, PIN, CONTROL, DEMO_MODE
+    global BASE_URL, PIN, CONTROL, DEMO_MODE, NO_CONTROL
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
@@ -1073,11 +1235,13 @@ def main():
     ap.add_argument("--pin", default="", help="PIN richiesto per i comandi avanti/indietro")
     ap.add_argument("--no-control", action="store_true", help="disabilita i comandi dal telefono")
     ap.add_argument("--demo", action="store_true", help="simula presentazioni (senza PowerPoint)")
-    ap.add_argument("--no-browser", action="store_true", help="non aprire la pagina QR sul PC")
+    ap.add_argument("--no-browser", action="store_true", help="non aprire la pagina di avvio sul PC")
     args = ap.parse_args()
-    PIN = str(args.pin or "")
-    CONTROL = not args.no_control
+    NO_CONTROL = bool(args.no_control)
     DEMO_MODE = bool(args.demo)
+    saved_pin = load_settings()                  # scelte fatte l'ultima volta dalla pagina di avvio
+    PIN = str(args.pin or saved_pin or "")
+    CONTROL = ui_state()["ctl"]
 
     if not args.demo:
         try:
@@ -1128,14 +1292,14 @@ def main():
     except Exception as e:
         print(" (QR in console non disponibile: %s)" % e)
     print()
-    print(" Se il QR non si legge bene: pagina grande su http://localhost:%d/qr" % port)
+    print(" Pagina di avvio (QR e scelta di cosa mostrare sui telefoni): http://localhost:%d/start" % port)
     if not CONTROL:
         print(" Comandi avanti/indietro: DISABILITATI")
     elif PIN:
         print(" Comandi avanti/indietro: attivi, protetti da PIN")
     else:
         print(" Comandi avanti/indietro: attivi, SENZA PIN (chiunque sulla rete puo' usarli;")
-        print("   per proteggerli avvia con --pin 1234)")
+        print("   per proteggerli imposta un PIN nella pagina di avvio)")
     print(" Alla prima esecuzione Windows chiede di consentire l'accesso alla rete:")
     print(" scegli 'Reti private' (e 'Reti pubbliche' se il Wi-Fi e' visto come pubblico).")
     print(" Registro errori: " + log_path())
@@ -1148,7 +1312,7 @@ def main():
     log("Avvio %s %s - indirizzo %s" % (APP_NAME, APP_VERSION, BASE_URL))
     if not args.no_browser:
         try:
-            webbrowser.open("http://localhost:%d/qr" % port)
+            webbrowser.open("http://localhost:%d/start" % port)
         except Exception:
             pass
     try:
