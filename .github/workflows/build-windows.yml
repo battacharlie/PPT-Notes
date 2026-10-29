@@ -83,6 +83,11 @@ jobs:
           $d = Invoke-WebRequest http://localhost:8099/diagnostica -UseBasicParsing
           if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio reMNote") { throw "pagina diagnostica non valida" }
           if (-not (Test-Path dist\reMNote.log)) { throw "reMNote.log non creato accanto all'exe" }
+          $g = Invoke-WebRequest http://localhost:8099/start -UseBasicParsing
+          if ($g.Content -notmatch "Cosa vuoi far vedere" -or $g.Content -notmatch "/qr.svg") { throw "pagina di avvio non valida" }
+          $j = Invoke-WebRequest http://localhost:8099/settings.json -UseBasicParsing
+          if ($j.Content -notmatch '"ui"') { throw "impostazioni non valide: $($j.Content)" }
+          if ($s.Content -notmatch '"ui"') { throw "stato senza scelte per i telefoni" }
           $sl = Invoke-WebRequest http://localhost:8099/slide/d1/1.png -UseBasicParsing
           if ($sl.StatusCode -ne 200 -or $sl.Content -notmatch "demo_apertura") { throw "anteprima slide non valida" }
           if ($h.Content -notmatch "Slide successiva") { throw "pulsante Slide successiva mancante" }

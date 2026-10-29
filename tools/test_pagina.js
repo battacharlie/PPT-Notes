@@ -1,6 +1,7 @@
 const fs = require("fs"), vm = require("vm");
 const code = fs.readFileSync(process.argv[2], "utf8");
-const els = {}; const store = {}; let es = null;
+function boot(seed) {
+const els = {}; const store = Object.assign({}, seed); let es = null;
 function El(id) {
   const e = { id, style: {}, attrs: {}, _cls: new Set(), textContent: "", value: "", options: [], className: "", max: 0 };
   e.classList = { add: c => e._cls.add(c), remove: c => e._cls.delete(c), contains: c => e._cls.has(c),
@@ -21,8 +22,10 @@ const sandbox = {
   prompt: () => null, setTimeout, clearTimeout, console, encodeURIComponent, parseInt, parseFloat, Number, JSON, Math,
 };
 vm.createContext(sandbox); vm.runInContext(code, sandbox);
+return { $, body, store, sandbox, send: st => es.onmessage({ data: JSON.stringify(st) }) };
+}
+let { $, body, store, sandbox, send } = boot({ pptCur: "0", pptNext: "0" });
 let fails = 0; const T = (n, c) => { if (!c) fails++; console.log((c ? "OK   " : "FAIL ") + n); };
-const send = st => es.onmessage({ data: JSON.stringify(st) });
 const sh = (idx, total = 4, id = "d1") => ({ id, title: "demo.pptx", index: idx, total, notes: "n" + idx, next_notes: "" });
 const has = c => body._cls.has(c);
 
@@ -83,5 +86,27 @@ T("scelte aggiornate nel dispositivo", store.pptCur === "1" && store.pptStyle ==
 // comandi disabilitati dal server
 send({ control: false, shows: [sh(1)] });
 T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl") && $("ctlb").style.display === "none");
+
+// ---- versione 2: cosa mostrare e' deciso dal PC (pagina di avvio)
+{
+  const D = boot({});   // dispositivo nuovo, senza scelte salvate
+  const hasD = c => D.body._cls.has(c);
+  D.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true }, shows: [sh(1)] });
+  T("v2: dispositivo nuovo, tutto abilitato dal PC -> tutto visibile", !hasD("nostyle") && !hasD("noctl") && hasD("showcur") && hasD("shownext"));
+  T("v2: le anteprime si caricano da sole", D.$("imgcur").src.includes("/slide/d1/1.png") && D.$("imgnext").src.includes("/slide/d1/2.png"));
+  D.send({ control: true, ui: { style: false, ctl: true, cur: false, next: true }, shows: [sh(1)] });
+  T("v2: stile spento dal PC -> nascosto e pulsante sparito", hasD("nostyle") && D.$("styleb").style.display === "none");
+  T("v2: slide in onda spenta dal PC -> nascosta e pulsante sparito", !hasD("showcur") && D.$("curb").style.display === "none");
+  T("v2: le altre restano disponibili", hasD("shownext") && D.$("nextb").style.display === "" && !hasD("noctl") && D.$("ctlb").style.display === "");
+  D.send({ control: true, ui: { style: true, ctl: false, cur: true, next: false }, shows: [sh(2)] });
+  T("v2: comandi spenti dal PC -> area e pulsante nascosti", hasD("noctl") && D.$("ctlb").style.display === "none");
+  T("v2: slide successiva spenta dal PC -> nascosta", !hasD("shownext") && D.$("nextb").style.display === "none");
+  D.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true }, shows: [sh(2)] });
+  T("v2: il PC riaccende tutto, subito", !hasD("nostyle") && !hasD("noctl") && hasD("showcur") && hasD("shownext"));
+  D.$("curb").onclick();
+  T("v2: sul telefono si puo' comunque nascondere ci\u00f2 che il PC permette", !hasD("showcur"));
+  D.send({ control: true, shows: [sh(2)] });   // vecchio formato senza 'ui': tutto disponibile
+  T("v2: stato senza 'ui' = tutto disponibile", !hasD("nostyle") && !hasD("noctl") && D.$("styleb").style.display === "");
+}
 console.log(fails ? "CI SONO " + fails + " ERRORI" : "TUTTO OK"); process.exit(fails ? 1 : 0);
 }
