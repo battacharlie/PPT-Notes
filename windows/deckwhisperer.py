@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-reMNote - note del relatore da PowerPoint
+DeckWhisperer - Remote presenter notes & presentation control
 Legge le note del relatore da PowerPoint (in presentazione) e le pubblica su una
 pagina web raggiungibile dalla rete locale, in tempo reale.
 
@@ -11,11 +11,11 @@ Funzioni:
   - schermo sempre acceso (dove il browser lo consente)
 
 Uso:
-    py remnote.py                  (Windows, con PowerPoint installato)
-    py remnote.py --pin 1234       (i comandi richiedono il PIN)
-    py remnote.py --no-control     (disabilita del tutto i comandi)
-    py remnote.py --demo           (prova senza PowerPoint)
-    py remnote.py --port 8080
+    py deckwhisperer.py                  (Windows, con PowerPoint installato)
+    py deckwhisperer.py --pin 1234       (i comandi richiedono il PIN)
+    py deckwhisperer.py --no-control     (disabilita del tutto i comandi)
+    py deckwhisperer.py --demo           (prova senza PowerPoint)
+    py deckwhisperer.py --port 8080
 """
 import argparse
 import json
@@ -34,7 +34,7 @@ from html import escape as html_escape
 from xml.sax.saxutils import escape
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-APP_NAME = "reMNote"
+APP_NAME = "DeckWhisperer"
 try:
     from _buildinfo import APP_VERSION  # scritto dalla compilazione (tools/buildinfo.py)
 except Exception:
@@ -48,9 +48,9 @@ CONTROL = True
 BASE_URL = ""
 
 ASSET_FILES = {
-    "remnote-512.png": "image/png", "remnote-192.png": "image/png", "remnote-64.png": "image/png",
-    "remnote-32.png": "image/png", "apple-touch-icon.png": "image/png", "mwtl-logo.png": "image/png",
-    "remnote.ico": "image/x-icon",
+    "deckwhisperer-512.png": "image/png", "deckwhisperer-192.png": "image/png", "deckwhisperer-64.png": "image/png",
+    "deckwhisperer-32.png": "image/png", "apple-touch-icon.png": "image/png", "mwtl-logo.png": "image/png",
+    "deckwhisperer.ico": "image/x-icon",
 }
 
 
@@ -61,14 +61,15 @@ def resource_path(*parts):
 
 
 CREDITS_HTML = (
-    '<b>reMNote</b> – Note del relatore<br>Ideato e sviluppato da '
+    '<b>DeckWhisperer</b> – Remote presenter notes &amp; presentation control<br>Ideato e sviluppato da '
     '<a href="https://www.andreabattaglioli.it" target="_blank" rel="noopener">www.andreabattaglioli.it</a> · '
     '<a class="mwtl" href="https://www.mywebtvlive.com" target="_blank" rel="noopener">'
     '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
 )
 
-UI_KEYS = ("style", "ctl", "cur", "next")   # stile testo, comandi avanzamento, slide in onda, slide successiva
-UI = {k: True for k in UI_KEYS}              # cosa possono vedere i telefoni (scelto dal PC)
+UI_KEYS = ("style", "ctl", "cur", "next", "bar", "full")
+# stile testo, comandi avanzamento, slide in onda, slide successiva, barra comandi in alto, tutto schermo
+UI = {k: (k != "full") for k in UI_KEYS}   # tutto acceso, tranne il tutto schermo automatico              # cosa possono vedere i telefoni (scelto dal PC)
 NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
 SETTINGS_LOCK = threading.Lock()
 STATE = {"pin_required": False, "control": True, "ui": dict(UI), "shows": []}
@@ -111,14 +112,14 @@ def refresh_state():
     set_state(shows)
 
 
-def settings_paths():
+def settings_paths(name="DeckWhisperer.json"):
     """Dove salvare le impostazioni: accanto all'exe, poi nella cartella temporanea."""
-    return [os.path.join(os.path.dirname(p), "reMNote.json") for p in log_paths()]
+    return [os.path.join(os.path.dirname(p), name) for p in log_paths()]
 
 
 def load_settings():
     """Legge le impostazioni salvate (se ci sono). Ritorna il PIN salvato."""
-    for pth in settings_paths():
+    for pth in settings_paths() + settings_paths("reMNote.json"):   # l'ultimo e' il nome usato dalla 2.0
         try:
             with open(pth, encoding="utf-8") as f:
                 data = json.load(f)
@@ -261,16 +262,16 @@ LOG_FILE_USED = [""]
 
 def log_path():
     base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base, "reMNote.log")
+    return os.path.join(base, "DeckWhisperer.log")
 
 
 def log_paths():
     """Dove prova a scrivere il registro: accanto all'exe, poi nella cartella temporanea."""
-    return [log_path(), os.path.join(tempfile.gettempdir(), "reMNote.log")]
+    return [log_path(), os.path.join(tempfile.gettempdir(), "DeckWhisperer.log")]
 
 
 def log(msg):
-    """Scrive un messaggio in console, in memoria e nel file reMNote.log (ogni messaggio una volta sola)."""
+    """Scrive un messaggio in console, in memoria e nel file DeckWhisperer.log (ogni messaggio una volta sola)."""
     if msg in LOG_SEEN or len(LOG_SEEN) > 50:
         return
     LOG_SEEN.add(msg)
@@ -293,7 +294,7 @@ def log(msg):
 def diagnostica_info():
     """Testo con le informazioni utili per capire un problema, senza cercare file."""
     lines = [
-        "reMNote %s" % APP_VERSION,
+        "DeckWhisperer %s" % APP_VERSION,
         "Programma: %s%s" % (sys.executable, "  (exe)" if getattr(sys, "frozen", False) else "  (da sorgente)"),
         "Indirizzo: %s" % BASE_URL,
         "Registro previsto: %s" % log_path(),
@@ -311,12 +312,12 @@ def diagnostica_page():
 
 
 DIAG_PAGE = r"""<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>reMNote - diagnostica</title>
-<link rel="icon" type="image/png" href="/static/remnote-64.png">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>DeckWhisperer - diagnostica</title>
+<link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
 <style>body{font:14px Arial,sans-serif;margin:16px;background:#fff;color:#111}
 pre{background:#f3f3f3;padding:10px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
 button{font:15px Arial,sans-serif;padding:8px 14px;margin:4px 6px 4px 0;cursor:pointer}</style></head>
-<body><h2>reMNote - diagnostica</h2>
+<body><h2>DeckWhisperer - diagnostica</h2>
 <pre id="info">__INFO__</pre>
 <p><button id="prova">Prova le anteprime ora</button><button id="copia">Copia tutto</button></p>
 <pre id="out">Premi "Prova le anteprime ora" con una presentazione in corso.</pre>
@@ -400,7 +401,7 @@ def export_slide(app, job):
                 h = int(round(w * float(pres.PageSetup.SlideHeight) / float(pres.PageSetup.SlideWidth)))
             except Exception:
                 h = 540
-            path = os.path.join(tempfile.gettempdir(), "reMNote_%d_%d.png" % (os.getpid(), job["index"]))
+            path = os.path.join(tempfile.gettempdir(), "DeckWhisperer_%d_%d.png" % (os.getpid(), job["index"]))
             errs = []
             try:
                 # tentativo 1: dalla presentazione; tentativo 2: dalla slide in onda della finestra di presentazione
@@ -616,8 +617,8 @@ def qr_console(text):
 
 
 START_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>reMNote - avvio</title>
-<link rel="icon" type="image/png" href="/static/remnote-64.png">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>DeckWhisperer - avvio</title>
+<link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
 <style>
 :root{--bg:#f4f6f7;--card:#fff;--ink:#14262b;--mut:#5b6b70;--acc:#14434d;--ok:#1b7f4a;--bd:#d9e0e2}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Arial,sans-serif}
@@ -641,8 +642,8 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 .cr{font-size:13px;color:var(--mut);line-height:1.6;text-align:center;margin-top:22px}.cr a{color:var(--acc)}
 .cr img{vertical-align:middle;margin-right:4px}.links{margin-top:10px;font-size:14px}.links a{color:var(--acc)}
 </style></head><body><div class="wrap">
-<header><img src="/static/remnote-192.png" alt="reMNote"><div><h1>reMNote</h1>
-<small>Versione __VERSION__ &middot; Note del relatore sul telefono</small></div></header>
+<header><img src="/static/deckwhisperer-192.png" alt="DeckWhisperer"><div><h1>DeckWhisperer</h1>
+<small>Versione __VERSION__ &middot; Remote presenter notes &amp; presentation control</small></div></header>
 <div class="grid">
 <div class="card qr"><h2>1. Inquadra il QR</h2><img src="/qr.svg" alt="QR">
 <div class="url">__URL__</div><div class="hint">Telefono collegato alla stessa rete Wi-Fi del PC</div></div>
@@ -651,6 +652,8 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 <label class="opt"><input type="checkbox" id="u_ctl"><div><b>Comandi slide</b><span>Avanti, indietro e vai a slide</span></div></label>
 <label class="opt"><input type="checkbox" id="u_cur"><div><b>Slide in onda</b><span>Immagine della slide che il pubblico sta vedendo</span></div></label>
 <label class="opt"><input type="checkbox" id="u_next"><div><b>Slide successiva</b><span>Immagine della slide che arriva dopo</span></div></label>
+<label class="opt"><input type="checkbox" id="u_bar"><div><b>Barra dei comandi in alto</b><span>Pulsanti colorati, stile, QR, info. Spenta: restano solo note e scelta presentazione</span></div></label>
+<label class="opt"><input type="checkbox" id="u_full"><div><b>Modalità tutto schermo</b><span>Sui telefoni compare il pulsante e, al primo tocco, la pagina va a tutto schermo (non su iPhone)</span></div></label>
 <div class="pin"><label for="pin"><b>PIN per i comandi</b> (facoltativo)</label>
 <input id="pin" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="nessuno"><button id="savepin">Salva PIN</button></div>
 <div id="saved"></div>
@@ -659,7 +662,7 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 </div></div>
 <div class="cr">__CREDITS__</div></div>
 <script>
-const $ = id => document.getElementById(id), K = ["style","ctl","cur","next"];
+const $ = id => document.getElementById(id), K = ["style","ctl","cur","next","bar","full"];
 let timer = null;
 function flash(t){ $("saved").textContent = t; clearTimeout(timer); timer = setTimeout(() => { $("saved").textContent = ""; }, 2500); }
 async function save(){
@@ -674,7 +677,7 @@ K.forEach(k => { $("u_" + k).onchange = save; });
 $("savepin").onclick = save;
 $("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
 fetch("/settings.json").then(r => r.json()).then(d => {
-  K.forEach(k => { $("u_" + k).checked = d.ui[k] !== false; });
+  K.forEach(k => { $("u_" + k).checked = k === "full" ? d.ui[k] === true : d.ui[k] !== false; });
   $("u_ctl").disabled = !!d.no_control;
   if (d.no_control) $("u_ctl").parentNode.querySelector("span").textContent = "Disattivati: il programma è stato avviato con --no-control";
   $("pin").value = d.pin || "";
@@ -798,7 +801,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._slide(m.group(1), int(m.group(2)))
         elif path.startswith("/static/") or path == "/favicon.ico":
-            name = "remnote.ico" if path == "/favicon.ico" else path[len("/static/"):]
+            name = "deckwhisperer.ico" if path == "/favicon.ico" else path[len("/static/"):]
             if name not in ASSET_FILES:
                 self._send(404, "text/plain; charset=utf-8", b"Non trovato")
                 return
@@ -818,7 +821,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
         elif path in ("/start", "/qr"):
             if not self._is_local():
-                self._send(403, "text/plain; charset=utf-8", "Pagina di avvio: si apre solo dal PC dove gira reMNote".encode("utf-8"))
+                self._send(403, "text/plain; charset=utf-8", "Pagina di avvio: si apre solo dal PC dove gira DeckWhisperer".encode("utf-8"))
                 return
             self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__URL__", BASE_URL)
                        .replace("__VERSION__", APP_VERSION).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
@@ -887,9 +890,9 @@ PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>reMNote</title>
-<link rel="icon" type="image/png" sizes="64x64" href="/static/remnote-64.png">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/remnote-32.png">
+<title>DeckWhisperer</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/static/deckwhisperer-64.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/deckwhisperer-32.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <meta name="theme-color" content="#14434d">
 <style>
@@ -897,7 +900,7 @@ PAGE = r"""<!DOCTYPE html>
   * { box-sizing: border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); }
   body { display:flex; flex-direction:column; font-family: Arial, sans-serif; }
-  #bar { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:6px 10px;
+  #bar { max-height:46vh; overflow-y:auto; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:6px 10px;
          background:#222; color:#eee; font:13px Arial, sans-serif; border-bottom:1px solid #444; }
   #bar label { display:flex; align-items:center; gap:5px; white-space:nowrap; }
   #bar select, #bar input[type=number], #bar button { font:13px Arial, sans-serif; }
@@ -931,7 +934,6 @@ PAGE = r"""<!DOCTYPE html>
   #infobox .mwtl img { vertical-align:middle; margin-right:4px; }
   .grp { display:contents; }
   body.nostyle .grp { display:none; }
-  #bar button.tg.on { background:#2b8392; color:#fff; border-color:#8fd3df; }
   #slides { display:none; gap:10px; justify-content:center; padding:8px 10px; background:#111;
             border-bottom:1px solid #444; }
   body.showcur #slides, body.shownext #slides { display:flex; }
@@ -943,6 +945,24 @@ PAGE = r"""<!DOCTYPE html>
   #slides .ph { display:none; aspect-ratio:16/9; max-height:30vh; width:100%; align-items:center;
                 justify-content:center; border:1px dashed #555; color:#999; font:13px Arial, sans-serif;
                 padding:6px; text-align:center; overflow:auto; overflow-wrap:anywhere; }
+  /* ---- pulsanti colorati: ogni funzione ha il suo colore; pieno = acceso, bordo = spento ---- */
+  .chips { display:flex; flex-wrap:wrap; gap:8px; width:100%; }
+  #bar .tg, #bar .act { min-height:44px; padding:8px 16px; border-radius:24px; font:600 15px Arial, sans-serif;
+        cursor:pointer; border:2px solid var(--c); background:transparent; color:var(--c); }
+  #bar .tg::before { content:"\25CB\00a0"; }
+  #bar .tg.on { background:var(--c); color:#fff; }
+  #bar .tg.on::before { content:"\25CF\00a0"; }
+  #bar .act { background:var(--c); color:#fff; }
+  .c-style { --c:#a47bff; } .c-ctl { --c:#1fae62; } .c-cur { --c:#ff7a45; } .c-next { --c:#3b9cff; }
+  .c-full { --c:#12a8a8; } .c-qr { --c:#7d8b92; } .c-info { --c:#7d8b92; } .c-hide { --c:#c8a23a; }
+  .sec { font:700 11px Arial, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:#9fb0b6; width:100%; }
+  #ctl button { min-height:64px; }
+  #prev { background:#d98a14 !important; border-color:#f2b24d !important; color:#1b1200 !important; }
+  #next { background:#1fae62 !important; border-color:#6fe0a2 !important; color:#05200f !important; }
+  #go { background:#3b9cff !important; border-color:#9fcdff !important; color:#fff !important; min-height:36px; }
+  #ctl .big:active { filter:brightness(1.25); transform:scale(.98); }
+  body.nobar #bar > *:not(#showlbl):not(#info) { display:none !important; }
+  body.nobar #showbar { display:none !important; }
   body.hidebar #bar { display:none; }
   body.noctl #ctl { display:none; }
   #showbar { position:fixed; right:8px; top:8px; display:none; opacity:.4; }
@@ -979,14 +999,20 @@ PAGE = r"""<!DOCTYPE html>
   <label>Spaziatura <input type="range" id="ls" min="-2" max="20" step="0.5"> <span id="lsv"></span></label>
   <button id="reset">Ripristina</button>
   </span>
-  <button id="full">Schermo intero</button>
-  <button id="styleb" class="tg" title="Mostra/nascondi i comandi del testo">Stile testo</button>
-  <button id="ctlb" class="tg" title="Mostra/nascondi i pulsanti per avanzare le slide">Comandi</button>
-  <button id="curb" class="tg" title="Mostra/nascondi la slide in onda">Slide in onda</button>
-  <button id="nextb" class="tg" title="Mostra/nascondi la slide successiva">Slide successiva</button>
-  <button id="qrb">QR</button>
-  <button id="infob">Info</button>
-  <button id="hide">Nascondi barra</button>
+  <div class="sec">Cosa mostrare</div>
+  <div class="chips">
+    <button id="styleb" class="tg c-style" title="Mostra/nascondi i comandi del testo">Stile testo</button>
+    <button id="ctlb" class="tg c-ctl" title="Mostra/nascondi i pulsanti per avanzare le slide">Comandi slide</button>
+    <button id="curb" class="tg c-cur" title="Mostra/nascondi la slide in onda">Slide in onda</button>
+    <button id="nextb" class="tg c-next" title="Mostra/nascondi la slide successiva">Slide successiva</button>
+  </div>
+  <div class="sec">Strumenti</div>
+  <div class="chips">
+    <button id="full" class="act c-full">Schermo intero</button>
+    <button id="qrb" class="act c-qr">QR</button>
+    <button id="infob" class="act c-info">Info</button>
+    <button id="hide" class="act c-hide">Nascondi barra</button>
+  </div>
   <div id="info"><span id="pos"></span><span id="dot" title="Presentazione"></span></div>
 </div>
 <div id="slides">
@@ -1006,7 +1032,7 @@ PAGE = r"""<!DOCTYPE html>
 <button id="showbar">Barra</button>
 <div id="infoov">
   <div id="infobox">
-    <img class="logo" src="/static/remnote-192.png" alt="reMNote">
+    <img class="logo" src="/static/deckwhisperer-192.png" alt="DeckWhisperer">
     <div class="ver">Versione __VERSION__</div>
     <div>__CREDITS__</div>
     <div style="margin-top:8px;font-size:13px"><a href="/diagnostica" target="_blank">Diagnostica</a></div>
@@ -1061,8 +1087,8 @@ $("showbar").onclick = () => document.body.classList.remove("hidebar");
 apply();
 
 /* ---- stato, scelta presentazione ---- */
-let st = { shows: [], pin_required: false, control: true, ui: { style: true, ctl: true, cur: true, next: true } };
-const uiOn = k => !st.ui || st.ui[k] !== false;   // scelto dal PC nella pagina di avvio
+let st = { shows: [], pin_required: false, control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: true, full: false } };
+const uiOn = k => k === "full" ? !!(st.ui && st.ui.full) : (!st.ui || st.ui[k] !== false);   // scelto dal PC nella pagina di avvio
 let selId = lsGet("pptSel", "");
 let lastKey = null, optKey = "";
 
@@ -1180,6 +1206,8 @@ function applyCtl() {
   const b = document.body.classList;
   b.toggle("nostyle", !styleOn || !uiOn("style"));
   b.toggle("noctl", !ctlOn || !allowed);
+  b.toggle("nobar", !uiOn("bar"));
+  $("full").style.display = uiOn("full") ? "" : "none";
   b.toggle("showcur", curOn && uiOn("cur"));
   b.toggle("shownext", nextOn && uiOn("next"));
   $("styleb").style.display = uiOn("style") ? "" : "none";
@@ -1195,6 +1223,15 @@ $("styleb").onclick = () => { styleOn = !styleOn; lsSet("pptStyle", styleOn ? "1
 $("ctlb").onclick = () => { ctlOn = !ctlOn; lsSet("pptCtl", ctlOn ? "1" : "0"); applyCtl(); };
 $("curb").onclick = () => { curOn = !curOn; lsSet("pptCur", curOn ? "1" : "0"); applyCtl(); render(); };
 $("nextb").onclick = () => { nextOn = !nextOn; lsSet("pptNext", nextOn ? "1" : "0"); applyCtl(); render(); };
+
+/* ---- tutto schermo: se il PC lo ha abilitato, al primo tocco la pagina passa a tutto schermo ---- */
+let fullTried = false;
+document.addEventListener("pointerdown", () => {
+  if (fullTried || !uiOn("full")) return;
+  fullTried = true;
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen)
+    document.documentElement.requestFullscreen().catch(() => {});
+});
 
 /* ---- schermo sempre acceso (serve HTTPS o app; sul sito http della LAN molti browser lo negano) ---- */
 let wl = null;
@@ -1277,7 +1314,7 @@ def main():
     except Exception:
         pass
     print("=" * 60)
-    print(" %s %s - note del relatore sempre con te" % (APP_NAME, APP_VERSION))
+    print(" %s %s - Remote presenter notes & presentation control" % (APP_NAME, APP_VERSION))
     print("=" * 60)
     print(" Indirizzo per smartphone e altri PC della rete:")
     print("   " + BASE_URL)
@@ -1306,7 +1343,7 @@ def main():
     print(" Diagnostica: http://localhost:%d/diagnostica" % port)
     print(" Chiudi questa finestra per fermare il programma.")
     print()
-    print(" reMNote - Ideato e sviluppato da www.andreabattaglioli.it")
+    print(" DeckWhisperer - Ideato e sviluppato da www.andreabattaglioli.it")
     print(" Powered by www.mywebtvlive.com - Made in Bolognina")
 
     log("Avvio %s %s - indirizzo %s" % (APP_NAME, APP_VERSION, BASE_URL))

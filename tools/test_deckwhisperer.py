@@ -1,7 +1,7 @@
-"""Test di reMNote senza PowerPoint: anteprime slide (con PowerPoint simulato) e comportamento della pagina."""
+"""Test di DeckWhisperer senza PowerPoint: anteprime slide (con PowerPoint simulato) e comportamento della pagina."""
 import json, importlib.util, shutil, subprocess, tempfile, threading, time, urllib.request, urllib.error, sys, os
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("remnote", os.path.join(HERE, "..", "windows", "remnote.py"))
+spec = importlib.util.spec_from_file_location("deckwhisperer", os.path.join(HERE, "..", "windows", "deckwhisperer.py"))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
 class FakeSlides:
@@ -80,10 +80,10 @@ st, _, _, b9 = get("/slide/333/1.png"); check("secondo tentativo dalla finestra 
 st, _, _, e9 = get("/slide/333/2.png"); check("slide non in onda: errore spiegato", st == 404 and b"Slide.Export non consentito" in e9)
 st, _, _, e8 = get("/slide/111/9.png"); check("fuori intervallo: messaggio chiaro", st == 404 and b"fuori intervallo (1-5)" in e8)
 st, _, _, b3 = get("/slide/222/1.png"); check("altra presentazione funziona dopo l'errore", st == 200 and b"slide-1" in b3)
-files = [f for f in os.listdir(__import__("tempfile").gettempdir()) if f.startswith("reMNote_")]
+files = [f for f in os.listdir(__import__("tempfile").gettempdir()) if f.startswith("DeckWhisperer_")]
 check("nessun file temporaneo rimasto", files == [])
 st, ct, _, dg = get("/diagnostica")
-check("pagina /diagnostica (200, html)", st == 200 and ct.startswith("text/html") and b"reMNote" in dg)
+check("pagina /diagnostica (200, html)", st == 200 and ct.startswith("text/html") and b"DeckWhisperer" in dg)
 check("diagnostica: versione, percorso del registro e messaggi recenti", m.APP_VERSION.encode() in dg and b"Registro previsto" in dg and b"Anteprima slide" in dg)
 st, ct, _, di = get("/diagnostica?solo=info")
 check("diagnostica: testo semplice aggiornabile", st == 200 and ct.startswith("text/plain") and b"Ultimi messaggi" in di)
@@ -115,25 +115,25 @@ def post(path, obj):
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
 tmp = tempfile.mkdtemp()
-m.settings_paths = lambda: [os.path.join(tmp, "reMNote.json")]
+m.settings_paths = lambda name="DeckWhisperer.json": [os.path.join(tmp, "DeckWhisperer.json")]
 m.BASE_URL = "http://192.168.1.5:8080/"
 st, ct, _, body = get("/start")
-check("pagina di avvio dal PC (200, HTML, QR e caselle)", st == 200 and "text/html" in ct and b"/qr.svg" in body and b"u_cur" in body and b"192.168.1.5:8080" in body)
+check("pagina di avvio dal PC (200, HTML, QR e caselle)", st == 200 and "text/html" in ct and b"/qr.svg" in body and b"u_cur" in body and b"u_bar" in body and b"u_full" in body and b"192.168.1.5:8080" in body)
 check("/qr mostra la stessa pagina di avvio", get("/qr")[3] == body)
 st, ct, _, body = get("/settings.json"); d = json.loads(body)
-check("impostazioni iniziali: tutto visibile, nessun PIN", st == 200 and d["ui"] == {"style": True, "ctl": True, "cur": True, "next": True} and d["pin"] == "")
+check("impostazioni iniziali: tutto visibile, nessun PIN", st == 200 and d["ui"] == {"style": True, "ctl": True, "cur": True, "next": True, "bar": True, "full": False} and d["pin"] == "")
 _, _, _, body = get("/state"); s0 = json.loads(body)
 check("stato per i telefoni contiene 'ui'", s0["ui"]["cur"] is True and s0["control"] is True)
 ver0 = m.VERSION
-st, r = post("/settings", {"ui": {"style": False, "ctl": True, "cur": True, "next": False}, "pin": "4321"})
+st, r = post("/settings", {"ui": {"style": False, "ctl": True, "cur": True, "next": False, "bar": False, "full": True}, "pin": "4321"})
 check("salvataggio impostazioni (200)", st == 200 and r["ok"])
 _, _, _, body = get("/state"); s1 = json.loads(body)
-check("i telefoni ricevono subito le nuove scelte", s1["ui"] == {"style": False, "ctl": True, "cur": True, "next": False} and s1["pin_required"] is True and m.VERSION > ver0)
-saved = json.load(open(os.path.join(tmp, "reMNote.json"), encoding="utf-8"))
-check("scelte e PIN salvati su file", saved["ui"]["next"] is False and saved["pin"] == "4321")
-m.UI.update({k: True for k in m.UI_KEYS}); m.PIN = ""
+check("i telefoni ricevono subito le nuove scelte", s1["ui"] == {"style": False, "ctl": True, "cur": True, "next": False, "bar": False, "full": True} and s1["pin_required"] is True and m.VERSION > ver0)
+saved = json.load(open(os.path.join(tmp, "DeckWhisperer.json"), encoding="utf-8"))
+check("scelte e PIN salvati su file", saved["ui"]["next"] is False and saved["ui"]["bar"] is False and saved["ui"]["full"] is True and saved["pin"] == "4321")
+m.UI.update({k: (k != "full") for k in m.UI_KEYS}); m.PIN = ""
 m.PIN = m.load_settings()
-check("riavvio: scelte e PIN riletti dal file", m.PIN == "4321" and m.UI["style"] is False and m.UI["next"] is False and m.UI["cur"] is True)
+check("riavvio: scelte e PIN riletti dal file", m.PIN == "4321" and m.UI["style"] is False and m.UI["next"] is False and m.UI["cur"] is True and m.UI["full"] is True and m.UI["bar"] is False)
 st, r = post("/settings", {"ui": {"cur": "si"}}); check("valore non valido rifiutato (400)", st == 400)
 st, r = post("/settings", {"ui": {}, "pin": "x" * 40}); check("PIN troppo lungo rifiutato (400)", st == 400)
 st, r = post("/cmd", {"id": "111", "action": "next", "pin": "0000"}); check("comando con PIN errato -> 403", st == 403 and r["error"] == "pin")
@@ -142,7 +142,13 @@ st, r = post("/cmd", {"id": "111", "action": "next"}); check("comandi spenti dal
 _, _, _, body = get("/state"); check("stato: control False e ui.ctl False", json.loads(body)["control"] is False and json.loads(body)["ui"]["ctl"] is False)
 m.NO_CONTROL = True; post("/settings", {"ui": {"ctl": True}}); _, _, _, body = get("/state")
 check("--no-control vince sulla casella", json.loads(body)["ui"]["ctl"] is False and json.loads(body)["control"] is False)
-m.NO_CONTROL = False; post("/settings", {"ui": {k: True for k in m.UI_KEYS}, "pin": ""})
+m.NO_CONTROL = False; post("/settings", {"ui": {k: (k != "full") for k in m.UI_KEYS}, "pin": ""})
+# impostazioni salvate dalla 2.0 (reMNote.json): lette una volta
+old_dir = tempfile.mkdtemp(); json.dump({"ui": {"cur": False}, "pin": "77"}, open(os.path.join(old_dir, "reMNote.json"), "w"))
+real_paths = m.settings_paths; m.settings_paths = lambda name="DeckWhisperer.json": [os.path.join(old_dir, name)]
+m.UI.update({k: (k != "full") for k in m.UI_KEYS})
+check("migrazione: legge reMNote.json della 2.0", m.load_settings() == "77" and m.UI["cur"] is False)
+m.settings_paths = real_paths; m.UI.update({k: (k != "full") for k in m.UI_KEYS})
 # una richiesta da un altro dispositivo non puo' cambiare le impostazioni
 m.local_ips = lambda: []
 class FakeSelf:
@@ -160,12 +166,12 @@ node = shutil.which("node")
 if node:
     import re
     page = m.PAGE.replace("__CREDITS__", "").replace("__VERSION__", "test")
-    js = os.path.join(tempfile.gettempdir(), "remnote_pagina.js")
+    js = os.path.join(tempfile.gettempdir(), "deckwhisperer_pagina.js")
     open(js, "w", encoding="utf-8").write(re.search(r"<script>(.*)</script>", page, re.S).group(1))
     r = subprocess.run([node, os.path.join(HERE, "test_pagina.js"), js], capture_output=True, text=True)
     print(r.stdout + r.stderr)
     check("pagina: test del comportamento dei pulsanti", r.returncode == 0)
-    dj = os.path.join(tempfile.gettempdir(), "remnote_diagnostica.js")
+    dj = os.path.join(tempfile.gettempdir(), "deckwhisperer_diagnostica.js")
     open(dj, "w", encoding="utf-8").write(re.search(r"<script>(.*)</script>", m.DIAG_PAGE, re.S).group(1))
     r2 = subprocess.run([node, "--check", dj], capture_output=True, text=True)
     check("pagina diagnostica: JavaScript valido", r2.returncode == 0)

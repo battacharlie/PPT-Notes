@@ -1,7 +1,7 @@
 const fs = require("fs"), vm = require("vm");
 const code = fs.readFileSync(process.argv[2], "utf8");
 function boot(seed) {
-const els = {}; const store = Object.assign({}, seed); let es = null;
+const els = {}; const store = Object.assign({}, seed); let es = null; const docL = {}; let fsCalls = 0;
 function El(id) {
   const e = { id, style: {}, attrs: {}, _cls: new Set(), textContent: "", value: "", options: [], className: "", max: 0 };
   e.classList = { add: c => e._cls.add(c), remove: c => e._cls.delete(c), contains: c => e._cls.has(c),
@@ -15,14 +15,14 @@ function El(id) {
 const $ = id => els[id] || (els[id] = El(id));
 const body = El("body"), docEl = El("html"); docEl.style.setProperty = () => {};
 const sandbox = {
-  document: { getElementById: $, body, documentElement: Object.assign(docEl, { requestFullscreen: () => Promise.resolve() }),
-    createElement: () => El("opt"), addEventListener() {}, fullscreenElement: null, visibilityState: "visible" },
+  document: { getElementById: $, body, documentElement: Object.assign(docEl, { requestFullscreen: () => { fsCalls++; return Promise.resolve(); } }),
+    createElement: () => El("opt"), addEventListener(t, f) { (docL[t] = docL[t] || []).push(f); }, fullscreenElement: null, visibilityState: "visible" },
   navigator: {}, localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
   EventSource: function () { es = this; }, fetch: (u) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(globalThis.__errText || "") }),
   prompt: () => null, setTimeout, clearTimeout, console, encodeURIComponent, parseInt, parseFloat, Number, JSON, Math,
 };
 vm.createContext(sandbox); vm.runInContext(code, sandbox);
-return { $, body, store, sandbox, send: st => es.onmessage({ data: JSON.stringify(st) }) };
+return { $, body, store, sandbox, tap: () => (docL.pointerdown || []).forEach(f => f({})), fs: () => fsCalls, send: st => es.onmessage({ data: JSON.stringify(st) }) };
 }
 let { $, body, store, sandbox, send } = boot({ pptCur: "0", pptNext: "0" });
 let fails = 0; const T = (n, c) => { if (!c) fails++; console.log((c ? "OK   " : "FAIL ") + n); };
@@ -105,6 +105,19 @@ T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl")
   T("v2: il PC riaccende tutto, subito", !hasD("nostyle") && !hasD("noctl") && hasD("showcur") && hasD("shownext"));
   D.$("curb").onclick();
   T("v2: sul telefono si puo' comunque nascondere ci\u00f2 che il PC permette", !hasD("showcur"));
+  // ---- versione 2.1: barra comandi e tutto schermo scelti dal PC
+  const E = boot({});
+  const hasE = c => E.body._cls.has(c);
+  E.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: true, full: false }, shows: [sh(1)] });
+  T("v2.1: barra visibile, tutto schermo non abilitato", !hasE("nobar") && E.$("full").style.display === "none");
+  E.tap(); T("v2.1: tutto schermo non abilitato -> il tocco non lo attiva", E.fs() === 0);
+  E.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: false, full: true }, shows: [sh(1)] });
+  T("v2.1: barra spenta dal PC -> classe nobar", hasE("nobar"));
+  T("v2.1: tutto schermo acceso -> pulsante visibile", E.$("full").style.display === "");
+  E.tap(); T("v2.1: primo tocco -> tutto schermo", E.fs() === 1);
+  E.tap(); T("v2.1: solo al primo tocco", E.fs() === 1);
+  E.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: true, full: true }, shows: [sh(1)] });
+  T("v2.1: barra riaccesa subito", !hasE("nobar"));
   D.send({ control: true, shows: [sh(2)] });   // vecchio formato senza 'ui': tutto disponibile
   T("v2: stato senza 'ui' = tutto disponibile", !hasD("nostyle") && !hasD("noctl") && D.$("styleb").style.display === "");
 }
