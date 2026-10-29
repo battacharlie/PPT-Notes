@@ -4,3 +4,5 @@ build/
 dist/
 *.spec
 windows/reMNote.exe
+windows/_buildinfo.py
+windows/version_info.txt
