@@ -17,7 +17,7 @@ const sandbox = {
   document: { getElementById: $, body, documentElement: Object.assign(docEl, { requestFullscreen: () => Promise.resolve() }),
     createElement: () => El("opt"), addEventListener() {}, fullscreenElement: null, visibilityState: "visible" },
   navigator: {}, localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
-  EventSource: function () { es = this; }, fetch: () => Promise.resolve({ ok: true, status: 200 }),
+  EventSource: function () { es = this; }, fetch: (u) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(globalThis.__errText || "") }),
   prompt: () => null, setTimeout, clearTimeout, console, encodeURIComponent, parseInt, parseFloat, Number, JSON, Math,
 };
 vm.createContext(sandbox); vm.runInContext(code, sandbox);
@@ -56,6 +56,15 @@ T("nuova presentazione: immagine ricaricata", $("imgcur").src.includes("/slide/d
 $("imgcur").onerror();
 T("errore immagine: messaggio, niente immagine rotta", $("phcur").textContent === "Anteprima non disponibile" && $("imgcur").style.display === "none");
 
+// motivo dell'errore mostrato al posto dell'anteprima
+globalThis.__errText = "esportazione fallita (prova)";
+sandbox.globalThis = globalThis;
+$("imgcur").onerror();
+setTimeout(() => {
+  T("errore: il motivo compare al posto dell'anteprima", $("phcur").textContent === "Anteprima non disponibile: esportazione fallita (prova)");
+  rest();
+}, 20);
+function rest() {
 // nascondere
 $("curb").onclick(); $("nextb").onclick();
 T("anteprime di nuovo nascoste", !has("showcur") && !has("shownext"));
@@ -75,3 +84,4 @@ T("scelte aggiornate nel dispositivo", store.pptCur === "1" && store.pptStyle ==
 send({ control: false, shows: [sh(1)] });
 T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl") && $("ctlb").style.display === "none");
 console.log(fails ? "CI SONO " + fails + " ERRORI" : "TUTTO OK"); process.exit(fails ? 1 : 0);
+}

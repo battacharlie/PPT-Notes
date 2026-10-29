@@ -164,6 +164,30 @@ def run_command(app, cmd):
     return False
 
 
+LOG_SEEN = set()
+
+
+def log_path():
+    base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, "reMNote.log")
+
+
+def log(msg):
+    """Scrive un messaggio in console e nel file reMNote.log (ogni messaggio una volta sola)."""
+    if msg in LOG_SEEN or len(LOG_SEEN) > 50:
+        return
+    LOG_SEEN.add(msg)
+    try:
+        print(" [registro] " + msg)
+    except Exception:
+        pass
+    try:
+        with open(log_path(), "a", encoding="utf-8") as f:
+            f.write("%s %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg))
+    except Exception:
+        pass
+
+
 def cache_get(key):
     with SLIDE_LOCK:
         v = SLIDE_CACHE.get(key)
@@ -186,16 +210,21 @@ def cache_clear():
 
 
 def export_slide(app, job):
-    """Esporta una slide in PNG (va chiamata solo dal thread che usa COM)."""
+    """Esporta una slide in PNG (va chiamata solo dal thread che usa COM).
+    Se fallisce, il motivo resta in job["error"] e viene mostrato sulla pagina."""
     key = (job["id"], job["index"])
     data = cache_get(key)
+    job["error"] = ""
     if data is None:
+        job["error"] = "presentazione non trovata (id %s)" % job["id"]
         for i in range(1, int(app.SlideShowWindows.Count) + 1):
             win = app.SlideShowWindows(i)
             if win_id(win, i) != job["id"]:
                 continue
             pres = win.Presentation
-            if not 1 <= job["index"] <= int(pres.Slides.Count):
+            total = int(pres.Slides.Count)
+            if not 1 <= job["index"] <= total:
+                job["error"] = "slide %d fuori intervallo (1-%d)" % (job["index"], total)
                 break
             w = 960
             try:
@@ -203,19 +232,37 @@ def export_slide(app, job):
             except Exception:
                 h = 540
             path = os.path.join(tempfile.gettempdir(), "reMNote_%d_%d.png" % (os.getpid(), job["index"]))
+            errs = []
             try:
-                pres.Slides(job["index"]).Export(path, "PNG", w, h)
-                with open(path, "rb") as f:
-                    data = f.read()
+                # tentativo 1: dalla presentazione; tentativo 2: dalla slide in onda della finestra di presentazione
+                for attempt in (1, 2):
+                    try:
+                        if attempt == 1:
+                            sl = pres.Slides(job["index"])
+                        else:
+                            if int(win.View.CurrentShowPosition) != job["index"]:
+                                break
+                            sl = win.View.Slide
+                        sl.Export(path, "PNG", w, h)
+                        if os.path.exists(path) and os.path.getsize(path) > 0:
+                            with open(path, "rb") as f:
+                                data = f.read()
+                            break
+                        errs.append("file immagine non creato")
+                    except Exception as e:
+                        errs.append("%s: %s" % (type(e).__name__, e))
             finally:
                 try:
                     os.remove(path)
                 except OSError:
                     pass
+            job["error"] = "" if data else "esportazione fallita (%s)" % (" | ".join(errs) or "nessun tentativo possibile")
             break
         if data:
             cache_put(key, data)
     job["result"] = data
+    if not data:
+        log("Anteprima slide %s/%s: %s" % (job["id"], job["index"], job["error"]))
     job["event"].set()
 
 
@@ -230,8 +277,10 @@ def process_image_jobs(app):
             continue
         try:
             export_slide(app, job)
-        except Exception:
+        except Exception as e:
             job["result"] = None
+            job["error"] = "%s: %s" % (type(e).__name__, e)
+            log("Anteprima slide: " + job["error"])
             job["event"].set()
 
 
@@ -432,18 +481,23 @@ class Handler(BaseHTTPRequestHandler):
 
     def _slide(self, sid, index):
         ctype = "image/png"
+        job = {"error": ""}
         if DEMO_MODE:
             data, ctype = demo_slide(sid, index)
         else:
             data = cache_get((sid, index))
             if data is None:
                 job = {"id": sid, "index": index, "t": time.time(),
-                       "event": threading.Event(), "result": None}
+                       "event": threading.Event(), "result": None, "error": ""}
                 IMGQ.put(job)
                 job["event"].wait(6)
                 data = job["result"]
+                if not data and not job["error"]:
+                    job["error"] = "PowerPoint non ha risposto entro 6 secondi"
+                    log("Anteprima slide %s/%s: %s" % (sid, index, job["error"]))
         if not data:
-            self._send(404, "text/plain; charset=utf-8", b"Anteprima non disponibile")
+            msg = (job["error"] if not DEMO_MODE else "") or "Anteprima non disponibile"
+            self._send(404, "text/plain; charset=utf-8", msg[:300].encode("utf-8"))
             return
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -626,7 +680,8 @@ PAGE = r"""<!DOCTYPE html>
   #slides img { display:block; width:100%; max-height:30vh; object-fit:contain; background:#000;
                 border:1px solid #555; }
   #slides .ph { display:none; aspect-ratio:16/9; max-height:30vh; width:100%; align-items:center;
-                justify-content:center; border:1px dashed #555; color:#999; font:13px Arial, sans-serif; }
+                justify-content:center; border:1px dashed #555; color:#999; font:13px Arial, sans-serif;
+                padding:6px; text-align:center; overflow:auto; overflow-wrap:anywhere; }
   body.hidebar #bar { display:none; }
   body.noctl #ctl { display:none; }
   #showbar { position:fixed; right:8px; top:8px; display:none; opacity:.4; }
@@ -805,8 +860,13 @@ function updateSlides(cur) {
 ["imgcur", "imgnext"].forEach(id => {
   $(id).onerror = () => {
     const ph = $(id === "imgcur" ? "phcur" : "phnext");
+    const src = $(id).getAttribute("data-src");
     $(id).style.display = "none"; $(id).removeAttribute("data-src");
     ph.textContent = "Anteprima non disponibile"; ph.style.display = "flex";
+    // chiede al programma il motivo e lo mostra al posto dell'anteprima
+    if (src) fetch(src).then(r => r.text()).then(t => {
+      if (t) ph.textContent = "Anteprima non disponibile: " + t.slice(0, 220);
+    }).catch(() => {});
   };
 });
 
@@ -974,6 +1034,7 @@ def main():
         print("   per proteggerli avvia con --pin 1234)")
     print(" Alla prima esecuzione Windows chiede di consentire l'accesso alla rete:")
     print(" scegli 'Reti private' (e 'Reti pubbliche' se il Wi-Fi e' visto come pubblico).")
+    print(" Registro errori: " + log_path())
     print(" Chiudi questa finestra per fermare il programma.")
     print()
     print(" reMNote - Ideato e sviluppato da www.andreabattaglioli.it")
