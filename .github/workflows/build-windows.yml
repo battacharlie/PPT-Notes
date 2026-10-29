@@ -80,6 +80,9 @@ jobs:
           if ($s.Content -notmatch "demo_apertura") { throw "stato non valido: $($s.Content)" }
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
           if ($q.Content -notmatch "<svg") { throw "QR non valido" }
+          $d = Invoke-WebRequest http://localhost:8099/diagnostica -UseBasicParsing
+          if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio reMNote") { throw "pagina diagnostica non valida" }
+          if (-not (Test-Path dist\reMNote.log)) { throw "reMNote.log non creato accanto all'exe" }
           $sl = Invoke-WebRequest http://localhost:8099/slide/d1/1.png -UseBasicParsing
           if ($sl.StatusCode -ne 200 -or $sl.Content -notmatch "demo_apertura") { throw "anteprima slide non valida" }
           if ($h.Content -notmatch "Slide successiva") { throw "pulsante Slide successiva mancante" }
