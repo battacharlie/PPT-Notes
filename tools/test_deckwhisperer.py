@@ -179,14 +179,24 @@ m.list_nics = lambda: [{"name": "Wi-Fi", "ip": "192.168.1.5"}]; m.update_base_ur
 check("scheda sparita: si torna all'automatica", m.BASE_URL == "http://192.168.1.5:8080/")
 post("/settings", {"ui": {}, "nic": ""}); check("scheda 'automatica' selezionabile", m.NIC_IP == "")
 st, ct, _, body = get("/guida")
-check("guida italiana (200, HTML con titoli e tabelle)", st == 200 and "text/html" in ct and b"<h2>" in body and b"<table>" in body and "Avvio in 4 passi".encode() in body)
-st, ct, _, body = get("/guida?lang=en")
-check("guida inglese", st == 200 and b"Quick start" in body and b'lang="en"' in body)
-check("guida: collegamento all'altra lingua", b"/guida?lang=it" in body)
+check("guida di default in inglese (200, HTML con titoli e tabelle)", st == 200 and "text/html" in ct and b"<h2>" in body and b"<table>" in body and b"Quick start" in body and b'lang="en"' in body)
+check("guida: selettore con tutte le lingue", all(("/guida?lang=%s" % c).encode() in body for c in ("en","it","fr","es","ar","zh")))
+for c, rtl in (("it",0),("fr",0),("es",0),("ar",1),("zh",0)):
+    st, ct, _, body = get("/guida?lang=" + c)
+    check("guida %s (200, titoli, %s)" % (c, "rtl" if rtl else "ltr"), st == 200 and b"<h2>" in body and (b'dir="rtl"' in body) == bool(rtl) and ('lang="%s"' % c).encode() in body)
+check("guida: lingua sconosciuta -> inglese", b"Quick start" in get("/guida?lang=xx")[3])
+# ---- lingua (3.1)
+d = json.loads(get("/settings.json")[3]); check("lingua di default: inglese", d["lang"] == "en" and set(d["langs"]) == {"en","it","fr","es","ar","zh"})
+check("i18n: stesse chiavi in tutte le lingue", all(set(m.I18N["langs"][c]) == set(m.I18N["langs"]["en"]) for c in m.I18N["langs"]))
+check("i18n: nessun testo vuoto", all(v.strip() for c in m.I18N["langs"] for v in m.I18N["langs"][c].values()))
+st, r = post("/settings", {"ui": {}, "pin": "", "lang": "xx"}); check("lingua non valida rifiutata", st == 400 and json.loads(get("/state")[3])["lang"] == "en")
+st, r = post("/settings", {"ui": {}, "pin": "", "lang": "fr"}); check("lingua francese accettata", st == 200 and json.loads(get("/state")[3])["lang"] == "fr")
+check("lingua: la guida di default segue la lingua scelta", b"D\xc3\xa9marrage" in get("/guida")[3] or b'lang="fr"' in get("/guida")[3])
+post("/settings", {"ui": {}, "pin": "", "lang": "en"})
 check("md_to_html: elenco con riga di continuazione", m.md_to_html("1. uno\n   due\n2. tre") == "<ol><li>uno due</li><li>tre</li></ol>")
 check("md_to_html: HTML nel testo e' neutralizzato", "<script>" not in m.md_to_html("x <script>alert(1)</script>"))
 m.UI.update({k: True for k in m.UI_KEYS}); m.PIN = ""
-# ---- Blocca schermo Remoto: nessun comando accettato dal server
+# ---- Lock remote screen: nessun comando accettato dal server
 post("/settings", {"ui": {"lock": True, "ctl": True, "goto": True}, "pin": ""})
 _, _, _, body = get("/state"); s2 = json.loads(body)
 check("schermo remoto bloccato: stato con lock, senza comandi", s2["ui"]["lock"] is True and s2["ui"]["ctl"] is False and s2["ui"]["goto"] is False and s2["control"] is False)
@@ -195,14 +205,37 @@ d = json.loads(get("/settings.json")[3]); check("pannello: i flag scelti restano
 post("/settings", {"ui": {"lock": False}, "pin": ""}); _, _, _, body = get("/state")
 check("schermo remoto sbloccato: i comandi tornano", json.loads(body)["control"] is True and json.loads(body)["ui"]["ctl"] is True)
 b = get("/start")[3]
-check("pagina di gestione: nomi e ordine dei flag", [b.find(x.encode()) for x in ("Barra degli strumenti", "Stile Testo", "Slide in Onda", "Slide Successiva", "Vai alla Slide", "Navigazione", "Blocca schermo Remoto")] == sorted(b.find(x.encode()) for x in ("Barra degli strumenti", "Stile Testo", "Slide in Onda", "Slide Successiva", "Vai alla Slide", "Navigazione", "Blocca schermo Remoto")) and b.find(b"Blocca schermo Remoto") > 0)
+check("pagina di gestione: nomi e ordine dei flag", [b.find(x.encode()) for x in ("Toolbar", "Text style", "Current slide", "Next slide", "Go to slide", "Navigation", "Lock remote screen")] == sorted(b.find(x.encode()) for x in ("Toolbar", "Text style", "Current slide", "Next slide", "Go to slide", "Navigation", "Lock remote screen")) and b.find(b"Lock remote screen") > 0)
 stop = True
+
+# ---- versione Mac: AppleScript simulato
+calls = []
+def fake_osa(script, *args, timeout=6):
+    calls.append((script, args))
+    if script is m.OSA_READ:
+        return "/Users/a/demo.pptx\x1fdemo.pptx\x1f2\x1f5\x1fnota uno\runo\x1fnota due\x1e/Users/a/b.pptx\x1fb.pptx\x1f1\x1f3\x1f\x1f\x1e"
+    if script is m.OSA_EXPORT:
+        open(args[2], "wb").write(b"\x89PNG-mac-%d" % int(args[1])); return "ok"
+    return "ok"
+m_osa = m.osa; m.osa = fake_osa
+shows, order = m.mac_read_shows()
+check("mac: legge due presentazioni", len(shows) == 2 and shows[0]["index"] == 2 and shows[0]["total"] == 5 and shows[1]["title"] == "b.pptx")
+check("mac: note con a capo normalizzati", shows[0]["notes"] == "nota uno\nuno" and shows[0]["next_notes"] == "nota due")
+check("mac: id fatti di lettere e cifre, diversi tra loro", shows[0]["id"] != shows[1]["id"] and all(c.isalnum() for c in shows[0]["id"]))
+calls.clear(); m.mac_run_command(order, {"id": shows[1]["id"], "action": "goto", "n": 3})
+check("mac: comando 'vai alla slide' sulla finestra giusta", calls and calls[0][1] == (2, "goto", 3))
+calls.clear(); m.mac_run_command(order, {"id": "nessuna", "action": "next"})
+check("mac: id sconosciuto -> nessun comando", not calls or calls[0][1][0] == 1)
+m.cache_clear(); job = {"id": shows[0]["id"], "index": 2, "t": time.time(), "event": threading.Event()}
+m.mac_export(order, job)
+check("mac: anteprima esportata", job["result"] == b"\x89PNG-mac-2" and job["error"] == "")
+m.osa = m_osa
 
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)
 node = shutil.which("node")
 if node:
     import re
-    page = m.PAGE.replace("__CREDITS__", "").replace("__VERSION__", "test")
+    page = m.PAGE.replace("__I18N__", m.I18N_JSON).replace("__CREDITS__", "").replace("__VERSION__", "test")
     js = os.path.join(tempfile.gettempdir(), "deckwhisperer_pagina.js")
     open(js, "w", encoding="utf-8").write(re.search(r"<script>(.*)</script>", page, re.S).group(1))
     r = subprocess.run([node, os.path.join(HERE, "test_pagina.js"), js], capture_output=True, text=True)

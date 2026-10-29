@@ -14,6 +14,11 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 30
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      shown: ${{ steps.ver.outputs.shown }}
+      num: ${{ steps.ver.outputs.num }}
+      release: ${{ steps.ver.outputs.release }}
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +81,7 @@ jobs:
           Start-Sleep -Seconds 10
           $h = Invoke-WebRequest http://localhost:8099/ -UseBasicParsing
           if ($h.Content -notmatch "DeckWhisperer" -or $h.Content -notmatch "mywebtvlive.com") { throw "pagina senza nome/crediti" }
-          if ($h.Content -notmatch "Versione ${{ steps.ver.outputs.shown }}") { throw "versione non mostrata nella pagina" }
+          if ($h.Content -notmatch [regex]::Escape("</span> ${{ steps.ver.outputs.shown }}")) { throw "versione non mostrata nella pagina" }
           $s = Invoke-WebRequest http://localhost:8099/state -UseBasicParsing
           if ($s.Content -notmatch "demo_apertura") { throw "stato non valido: $($s.Content)" }
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
@@ -85,17 +90,23 @@ jobs:
           if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio MEFISTOFELE DeckWhisperer") { throw "pagina diagnostica non valida" }
           if (-not (Test-Path dist\mefistofele.log)) { throw "mefistofele.log non creato accanto all'exe" }
           $g = Invoke-WebRequest http://localhost:8099/start -UseBasicParsing
-          if ($g.Content -notmatch "Cosa vuoi far vedere" -or $g.Content -notmatch "/qr.svg" -or $g.Content -notmatch "u_goto" -or $g.Content -notmatch "Remote notes") { throw "pagina di gestione non valida" }
+          if ($g.Content -notmatch "What the phones will show" -or $g.Content -notmatch "/qr.svg" -or $g.Content -notmatch "u_goto" -or $g.Content -notmatch "Remote notes") { throw "pagina di gestione non valida" }
           $j = Invoke-WebRequest http://localhost:8099/settings.json -UseBasicParsing
           if ($j.Content -notmatch '"ui"') { throw "impostazioni non valide: $($j.Content)" }
           if ($s.Content -notmatch '"ui"') { throw "stato senza scelte per i telefoni" }
           $gu = Invoke-WebRequest http://localhost:8099/guida -UseBasicParsing
-          if ($gu.Content -notmatch "Avvio in 4 passi") { throw "guida non inclusa nell'exe" }
-          $ge = Invoke-WebRequest "http://localhost:8099/guida?lang=en" -UseBasicParsing
-          if ($ge.Content -notmatch "Quick start") { throw "guida inglese non inclusa nell'exe" }
+          if ($gu.Content -notmatch "Quick start") { throw "guida non inclusa nell'exe" }
+          foreach ($l in "it","fr","es","ar","zh") {
+            $ge = Invoke-WebRequest "http://localhost:8099/guida?lang=$l" -UseBasicParsing
+            if ($ge.Content -notmatch ('lang="' + $l + '"') -or $ge.Content -notmatch "<h2>") { throw "manuale $l non incluso nell'exe" }
+          }
+          $ge = Invoke-WebRequest "http://localhost:8099/guida?lang=it" -UseBasicParsing
+          if ($ge.Content -notmatch "Avvio in 4 passi") { throw "manuale italiano non incluso nell'exe" }
+          $sj = Invoke-WebRequest http://localhost:8099/settings.json -UseBasicParsing
+          if ($sj.Content -notmatch '"lang": "en"') { throw "lingua predefinita non inglese: $($sj.Content)" }
           $sl = Invoke-WebRequest http://localhost:8099/slide/d1/1.png -UseBasicParsing
           if ($sl.StatusCode -ne 200 -or $sl.Content -notmatch "demo_apertura") { throw "anteprima slide non valida" }
-          if ($h.Content -notmatch "Slide successiva") { throw "pulsante Slide successiva mancante" }
+          if ($h.Content -notmatch "Next slide") { throw "pulsante Next slide mancante" }
           foreach ($f in "static/mwtl-logo.png","static/deckwhisperer-192.png","favicon.ico") {
             $r = Invoke-WebRequest "http://localhost:8099/$f" -UseBasicParsing
             if ($r.StatusCode -ne 200 -or $r.RawContentLength -lt 500) { throw "asset mancante: $f" }
@@ -116,35 +127,116 @@ jobs:
             dist/mefistofele.exe
             dist/SHA256SUMS.txt
 
+  mac:
+    runs-on: macos-latest
+    needs: build
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: python -m pip install -r windows/requirements.txt
+
+      - name: Test (anteprime slide e pagina)
+        run: python tools/test_deckwhisperer.py
+
+      - name: Informazioni di versione
+        run: python tools/buildinfo.py "${{ needs.build.outputs.shown }}" "${{ needs.build.outputs.num }}"
+
+      - name: Crea mefistofele (Mac)
+        run: >
+          python -m PyInstaller --onefile --console --noconfirm --clean
+          --name mefistofele
+          --add-data "windows/assets:assets"
+          --add-data "docs:docs"
+          windows/deckwhisperer.py
+
+      - name: Collaudo (modalità demo, senza PowerPoint)
+        run: |
+          chmod +x dist/mefistofele
+          dist/mefistofele --demo --no-browser --port 8099 > mac-smoke.log 2>&1 &
+          PID=$!
+          sleep 12
+          curl -sf http://localhost:8099/ | grep -q "DeckWhisperer"
+          curl -sf http://localhost:8099/ | grep -qF "</span> ${{ needs.build.outputs.shown }}"
+          curl -sf http://localhost:8099/state | grep -q "demo_apertura"
+          curl -sf http://localhost:8099/qr.svg | grep -q "<svg"
+          curl -sf http://localhost:8099/start | grep -q "What the phones will show"
+          curl -sf http://localhost:8099/guida | grep -q "Quick start"
+          for l in it fr es ar zh; do curl -sf "http://localhost:8099/guida?lang=$l" | grep -q 'lang="'$l'"'; done
+          curl -sf -X POST -d '{"id":"d1","action":"next"}' http://localhost:8099/cmd | grep -q '"ok": true'
+          kill $PID || true
+          cat mac-smoke.log
+          echo "Collaudo OK"
+
+      - name: Crea mefistofele-mac.zip
+        run: |
+          cd dist
+          ditto -c -k --keepParent mefistofele mefistofele-mac.zip
+          shasum -a 256 mefistofele-mac.zip > SHA256SUMS-mac.txt
+          cat SHA256SUMS-mac.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mefistofele-mac
+          path: |
+            dist/mefistofele-mac.zip
+            dist/SHA256SUMS-mac.txt
+
+  release:
+    if: needs.build.outputs.release == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [build, mac]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Impronte SHA256 uniche
+        run: |
+          cat artifacts/mefistofele-windows/SHA256SUMS.txt artifacts/mefistofele-mac/SHA256SUMS-mac.txt > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Pubblica release
-        if: steps.ver.outputs.release == 'true' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.version }}
+          tag_name: ${{ needs.build.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: MEFISTOFELE DeckWhisperer ${{ steps.ver.outputs.num }}
+          name: MEFISTOFELE DeckWhisperer ${{ needs.build.outputs.num }}
           files: |
-            dist/mefistofele.exe
-            dist/SHA256SUMS.txt
-            docs/INSTRUCTIONS.md
-            docs/ISTRUZIONI.md
+            artifacts/mefistofele-windows/mefistofele.exe
+            artifacts/mefistofele-mac/mefistofele-mac.zip
+            SHA256SUMS.txt
+            docs/MANUAL-en.md
+            docs/MANUAL-it.md
+            docs/MANUAL-fr.md
+            docs/MANUAL-es.md
+            docs/MANUAL-ar.md
+            docs/MANUAL-zh.md
           body: |
             ## MEFISTOFELE DeckWhisperer – Remote notes & control for PowerPoint
 
             ### Download
-            | File | For / Per |
+            | File | For |
             |---|---|
             | `mefistofele.exe` | Windows 10/11 + PowerPoint |
-            | `INSTRUCTIONS.md` | Instructions in English |
-            | `ISTRUZIONI.md` | Istruzioni in italiano |
+            | `mefistofele-mac.zip` | macOS 12+ + PowerPoint for Mac |
+            | `MANUAL-xx.md` | Manual: [English](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-en.md) · [Italiano](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-it.md) · [Français](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-fr.md) · [Español](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-es.md) · [العربية](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-ar.md) · [中文](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-zh.md) |
 
-            ### 🇬🇧 English
-            **How to use**: double-click `mefistofele.exe`; the management page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi), pick the network adapter for the QR and what the phone should show (toolbar, text style, current/next slide, go to slide, navigation, lock remote screen) and start your slide show in PowerPoint. If Windows says "Windows protected your PC": *More info → Run anyway*. On first start allow **Private networks**.
-            Full instructions: [INSTRUCTIONS.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTRUCTIONS.md).
+            ### What's new in 3.1
+            - **Languages**: English (default), Italiano, Français, Español, العربية, 中文 — chosen on the management page and applied to all phones and to the guide.
+            - **Manual in all six languages**, also in the `docs` folder of the repository.
+            - **Mac version** (PowerPoint for Mac, via AppleScript).
 
-            ### 🇮🇹 Italiano
-            **Come si usa**: doppio clic su `mefistofele.exe`; nel browser si apre la pagina di gestione con il QR code. Inquadralo con lo smartphone (stessa rete Wi-Fi), scegli la scheda di rete del QR e cosa deve mostrare il telefono (barra degli strumenti, stile testo, slide in onda/successiva, vai alla slide, navigazione, blocca schermo remoto) e avvia la presentazione in PowerPoint. Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti le **Reti private**.
-            Istruzioni complete: [ISTRUZIONI.md](https://github.com/${{ github.repository }}/blob/main/docs/ISTRUZIONI.md).
+            **How to use**: run the program; the management page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi), pick the language, the network adapter and what the phone should show, then start your slide show in PowerPoint.
+            Windows: if it says "Windows protected your PC": *More info → Run anyway*; allow **Private networks**.
+            Mac: unzip, then follow the Mac steps in the manual (Terminal, `chmod +x`, allow Terminal to control PowerPoint).
 
             ---
-            Ideato e sviluppato da [www.andreabattaglioli.it](https://www.andreabattaglioli.it) · [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
+            Created and developed by [www.andreabattaglioli.it](https://www.andreabattaglioli.it) · [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina

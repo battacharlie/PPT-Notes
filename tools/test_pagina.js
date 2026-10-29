@@ -51,22 +51,22 @@ send({ control: true, shows: [sh(2)] });
 T("avanzando: in onda = 2, successiva = 3", $("imgcur").src.includes("/d1/2.png") && $("imgnext").src.includes("/d1/3.png"));
 // ultima slide
 send({ control: true, shows: [sh(4)] });
-T("ultima slide: segnaposto 'Ultima slide' al posto dell'immagine", $("phnext").textContent === "Ultima slide" && $("phnext").style.display === "flex" && $("imgnext").style.display === "none");
+T("ultima slide: segnaposto 'Last slide' al posto dell'immagine", $("phnext").textContent === "Last slide" && $("phnext").style.display === "flex" && $("imgnext").style.display === "none");
 // nessuna presentazione
 send({ control: true, shows: [] });
-T("senza presentazione: segnaposto attesa", $("phcur").textContent.includes("In attesa") && $("imgcur").style.display === "none");
+T("senza presentazione: segnaposto attesa", $("phcur").textContent.includes("Waiting") && $("imgcur").style.display === "none");
 send({ control: true, shows: [sh(1, 4, "d2")] });
 T("nuova presentazione: immagine ricaricata", $("imgcur").src.includes("/slide/d2/1.png") && $("imgcur").style.display === "block");
 // errore immagine
 $("imgcur").onerror();
-T("errore immagine: messaggio, niente immagine rotta", $("phcur").textContent === "Anteprima non disponibile" && $("imgcur").style.display === "none");
+T("errore immagine: messaggio, niente immagine rotta", $("phcur").textContent === "Preview not available" && $("imgcur").style.display === "none");
 
 // motivo dell'errore mostrato al posto dell'anteprima
 globalThis.__errText = "esportazione fallita (prova)";
 sandbox.globalThis = globalThis;
 $("imgcur").onerror();
 setTimeout(() => {
-  T("errore: il motivo compare al posto dell'anteprima", $("phcur").textContent === "Anteprima non disponibile: esportazione fallita (prova)");
+  T("errore: il motivo compare al posto dell'anteprima", $("phcur").textContent === "Preview not available: esportazione fallita (prova)");
   rest();
 }, 20);
 function rest() {

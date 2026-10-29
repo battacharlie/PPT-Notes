@@ -62,7 +62,7 @@ def resource_path(*parts):
 
 
 CREDITS_HTML = (
-    '<b>MEFISTOFELE DeckWhisperer</b> – Remote notes &amp; control for PowerPoint<br>Ideato e sviluppato da '
+    '<b>MEFISTOFELE DeckWhisperer</b> – Remote notes &amp; control for PowerPoint<br><span id="credby">Created and developed by</span> '
     '<a href="https://www.andreabattaglioli.it" target="_blank" rel="noopener">www.andreabattaglioli.it</a> · '
     '<a class="mwtl" href="https://www.mywebtvlive.com" target="_blank" rel="noopener">'
     '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
@@ -72,10 +72,24 @@ UI_KEYS = ("bar", "style", "cur", "next", "goto", "ctl", "lock")
 # barra degli strumenti, stile testo, slide in onda, slide successiva, vai alla slide, navigazione, blocca schermo remoto
 UI = {k: (k != "lock") for k in UI_KEYS}              # cosa possono vedere i telefoni (scelto dal PC)
 NIC_IP = ""                                  # scheda di rete scelta per il QR ("" = automatica)
+LANG = "en"                                  # lingua predefinita dei telefoni (inglese)
 PORT = 8080              # cosa possono vedere i telefoni (scelto dal PC)
 NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
 SETTINGS_LOCK = threading.Lock()
-STATE = {"pin_required": False, "control": True, "ui": dict(UI), "shows": []}
+def load_i18n():
+    """Traduzioni dell'interfaccia (assets/i18n.json): inglese, italiano, francese, spagnolo, arabo, cinese."""
+    try:
+        with open(resource_path("assets", "i18n.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"names": {"en": "English"}, "rtl": [], "langs": {"en": {}}}
+
+
+I18N = load_i18n()
+LANG_CODES = tuple(I18N["names"])
+I18N_JSON = json.dumps(I18N, ensure_ascii=False).replace("</", "<\\/")
+
+STATE = {"pin_required": False, "control": True, "ui": dict(UI), "lang": LANG, "shows": []}
 VERSION = 0
 COND = threading.Condition()
 CMDQ = queue.Queue()
@@ -90,7 +104,7 @@ DEMO_MODE = False
 def set_state(shows):
     """Aggiorna lo stato e avvisa i client solo se qualcosa e' cambiato."""
     global VERSION
-    new = {"pin_required": bool(PIN), "control": CONTROL, "ui": ui_state(), "shows": shows}
+    new = {"pin_required": bool(PIN), "control": CONTROL, "ui": ui_state(), "lang": LANG, "shows": shows}
     with COND:
         if new != STATE:
             STATE.clear()
@@ -164,19 +178,21 @@ def load_settings():
                 data = json.load(f)
         except Exception:
             continue
-        global NIC_IP
+        global NIC_IP, LANG
         ui = data.get("ui", {})
         for k in UI_KEYS:
             if isinstance(ui.get(k), bool):
                 UI[k] = ui[k]
         if isinstance(data.get("nic"), str):
             NIC_IP = data["nic"][:45]
+        if data.get("lang") in LANG_CODES:
+            LANG = data["lang"]
         return str(data.get("pin", ""))[:20]
     return ""
 
 
 def save_settings():
-    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP}, ensure_ascii=False, indent=1)
+    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG}, ensure_ascii=False, indent=1)
     for pth in settings_paths():
         try:
             with open(pth, "w", encoding="utf-8") as f:
@@ -190,7 +206,7 @@ def save_settings():
 
 def apply_settings(body):
     """Applica le scelte arrivate dalla pagina di avvio. Ritorna False se non valide."""
-    global PIN, NIC_IP
+    global PIN, NIC_IP, LANG
     ui = body.get("ui")
     if not isinstance(ui, dict) or any(k in ui and not isinstance(ui[k], bool) for k in UI_KEYS):
         return False
@@ -200,12 +216,16 @@ def apply_settings(body):
     nic = body.get("nic", NIC_IP)
     if not isinstance(nic, str) or (nic and nic not in [n["ip"] for n in list_nics()]):
         return False
+    lang = body.get("lang", LANG)
+    if lang not in LANG_CODES:
+        return False
     with SETTINGS_LOCK:
         for k in UI_KEYS:
             if k in ui:
                 UI[k] = ui[k]
         PIN = pin.strip()
         NIC_IP = nic
+        LANG = lang
         save_settings()
     update_base_url()
     refresh_state()
@@ -433,7 +453,7 @@ def export_slide(app, job):
     data = cache_get(key)
     job["error"] = ""
     if data is None:
-        job["error"] = "presentazione non trovata (id %s)" % job["id"]
+        job["error"] = "presentation not found (id %s)" % job["id"]
         for i in range(1, int(app.SlideShowWindows.Count) + 1):
             win = app.SlideShowWindows(i)
             if win_id(win, i) != job["id"]:
@@ -465,7 +485,7 @@ def export_slide(app, job):
                             with open(path, "rb") as f:
                                 data = f.read()
                             break
-                        errs.append("file immagine non creato")
+                        errs.append("image file not created")
                     except Exception as e:
                         errs.append("%s: %s" % (type(e).__name__, e))
             finally:
@@ -546,6 +566,217 @@ def poll_powerpoint(interval):
                     CMDQ.get_nowait()
                 except queue.Empty:
                     break
+        set_state(shows)
+        time.sleep(interval)
+
+
+# ---------------------------------------------------------------- PowerPoint per Mac (AppleScript)
+IS_MAC = sys.platform == "darwin"
+OSA_SEP_F, OSA_SEP_R = "\x1f", "\x1e"
+
+OSA_COMMON = """
+on notesOf(sl)
+  tell application "Microsoft PowerPoint"
+    try
+      set np to notes page of sl
+      set fallback to ""
+      repeat with s in shapes of np
+        try
+          set t to content of text range of text frame of s
+          if (length of t) > (length of fallback) then set fallback to t
+          set k to (placeholder type of placeholder format of s) as string
+          if k contains "body" then return t
+        end try
+      end repeat
+      return fallback
+    end try
+  end tell
+  return ""
+end notesOf
+"""
+
+OSA_READ = OSA_COMMON + """
+on run argv
+  set FS to ASCII character 31
+  set RS to ASCII character 30
+  set out to ""
+  tell application "Microsoft PowerPoint"
+    set n to count of slide show windows
+    repeat with i from 1 to n
+      try
+        set w to slide show window i
+        set v to slide show view of w
+        set idx to current show position of v
+        set p to presentation of w
+        set tot to count of slides of p
+        set cur to my notesOf(slide idx of p)
+        set nxt to ""
+        if idx < tot then set nxt to my notesOf(slide (idx + 1) of p)
+        set out to out & (full name of p) & FS & (name of p) & FS & idx & FS & tot & FS & cur & FS & nxt & RS
+      end try
+    end repeat
+  end tell
+  return out
+end run
+"""
+
+OSA_CMD = """
+on run argv
+  set k to (item 1 of argv) as integer
+  set act to item 2 of argv
+  tell application "Microsoft PowerPoint"
+    set v to slide show view of slide show window k
+    if act is "next" then
+      go to next slide v
+    else if act is "prev" then
+      go to previous slide v
+    else if act is "first" then
+      go to first slide v
+    else if act is "last" then
+      go to last slide v
+    else if act is "goto" then
+      go to slide v number ((item 3 of argv) as integer)
+    end if
+  end tell
+  return "ok"
+end run
+"""
+
+OSA_EXPORT = """
+on run argv
+  set k to (item 1 of argv) as integer
+  set n to (item 2 of argv) as integer
+  tell application "Microsoft PowerPoint"
+    set p to presentation of slide show window k
+    save slide n of p in (POSIX file (item 3 of argv)) as save as PNG
+  end tell
+  return "ok"
+end run
+"""
+
+
+def osa(script, *args, timeout=6):
+    """Esegue uno script AppleScript con osascript e ritorna il testo restituito."""
+    import subprocess
+    r = subprocess.run(["osascript", "-"] + [str(a) for a in args], input=script,
+                       capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or "osascript error").strip()[:300])
+    return r.stdout
+
+
+def mac_read_shows():
+    """Come read_shows() ma con AppleScript. Ritorna (lista presentazioni, nomi completi nell'ordine delle finestre)."""
+    out = osa(OSA_READ)
+    shows, order = [], []
+    for rec in out.split(OSA_SEP_R):
+        f = rec.strip("\n").split(OSA_SEP_F)
+        if len(f) < 6:
+            continue
+        full, name, idx, tot, cur, nxt = f[:6]
+        norm = lambda t: t.replace("\r\n", "\n").replace("\r", "\n").replace("\x0b", "\n")
+        shows.append({"id": "p%08x" % (zlib.crc32(full.encode("utf-8", "replace")) & 0xFFFFFFFF),
+                      "title": name, "index": int(float(idx)), "total": int(float(tot)),
+                      "notes": norm(cur), "next_notes": norm(nxt)})
+        order.append(shows[-1]["id"])
+    return shows, order
+
+
+def mac_window_of(order, wid):
+    for i, x in enumerate(order, 1):
+        if not wid or x == wid:
+            return i
+    return 0
+
+
+def mac_run_command(order, cmd):
+    k = mac_window_of(order, cmd.get("id"))
+    if not k:
+        return False
+    act = cmd.get("action")
+    n = ""
+    if act == "goto":
+        n = int(cmd.get("n"))
+    osa(OSA_CMD, k, act, n)
+    return True
+
+
+def mac_export(order, job):
+    key = (job["id"], job["index"])
+    data = cache_get(key)
+    job["error"] = ""
+    if data is None:
+        k = mac_window_of(order, job["id"]) if job["id"] in order else 0
+        if not k:
+            job["error"] = "presentation not found (id %s)" % job["id"]
+        else:
+            path = os.path.join(tempfile.gettempdir(), "DeckWhisperer_%d_%d.png" % (os.getpid(), job["index"]))
+            try:
+                osa(OSA_EXPORT, k, job["index"], path, timeout=8)
+                try:   # riduce a 960 px di larghezza (sips e' incluso in macOS)
+                    import subprocess
+                    subprocess.run(["sips", "--resampleWidth", "960", path], capture_output=True, timeout=5)
+                except Exception:
+                    pass
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    with open(path, "rb") as f:
+                        data = f.read()
+                else:
+                    job["error"] = "image file not created"
+            except Exception as e:
+                job["error"] = "export failed (%s: %s)" % (type(e).__name__, e)
+            finally:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        if data:
+            cache_put(key, data)
+    job["result"] = data
+    if not data:
+        log("Anteprima slide %s/%s: %s" % (job["id"], job["index"], job["error"]))
+    job["event"].set()
+
+
+def poll_powerpoint_mac(interval):
+    interval = max(interval, 0.4)       # osascript costa piu' di una chiamata COM
+    order = []
+    while True:
+        shows = []
+        try:
+            while True:
+                try:
+                    cmd = CMDQ.get_nowait()
+                except queue.Empty:
+                    break
+                if time.time() - cmd.get("t", 0) > 2.0:
+                    continue
+                try:
+                    mac_run_command(order, cmd)
+                except Exception as e:
+                    log("PowerPoint Mac command: %s" % e)
+            while True:
+                try:
+                    job = IMGQ.get_nowait()
+                except queue.Empty:
+                    break
+                if time.time() - job["t"] > 8.0:
+                    job["event"].set()
+                    continue
+                try:
+                    mac_export(order, job)
+                except Exception as e:
+                    job["result"] = None
+                    job["error"] = "%s: %s" % (type(e).__name__, e)
+                    job["event"].set()
+            shows, order = mac_read_shows()
+            if not shows:
+                cache_clear()
+        except Exception as e:
+            log("PowerPoint Mac: %s" % e)
+            fail_image_jobs()
+            shows, order = [], []
+            time.sleep(1.5)
         set_state(shows)
         time.sleep(interval)
 
@@ -663,23 +894,23 @@ def qr_console(text):
     return "\n".join(lines)
 
 
-START_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - gestione</title>
+START_PAGE = """<!DOCTYPE html><html lang="en" dir="ltr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__</title>
 <link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
 <style>
 :root{--bg:#f4f6f7;--card:#fff;--ink:#14262b;--mut:#5b6b70;--acc:#14434d;--ok:#1b7f4a;--bd:#d9e0e2}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Arial,"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif}
 .wrap{max-width:980px;margin:0 auto;padding:20px 16px 28px}
 header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
 header img{width:64px;height:64px}h1{font-size:26px;margin:0;letter-spacing:.02em}header small{color:var(--mut);display:block;margin-top:2px}
-.guide{margin-left:auto;font-size:16px;padding:10px 18px;text-decoration:none;background:var(--acc);color:#fff;border-radius:8px}
+.guide{margin-inline-start:auto;font-size:16px;padding:10px 18px;text-decoration:none;background:var(--acc);color:#fff;border-radius:8px}
 .grid{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:18px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px}
 .card h2{font-size:17px;margin:0 0 12px}
 .qr{text-align:center}.qr img{width:100%;max-width:320px;height:auto}
-.url{font-size:20px;font-weight:700;word-break:break-all;margin:8px 0 2px}.hint{color:var(--mut);font-size:14px}
-.nic{margin-top:14px;text-align:left}.nic label{font-weight:700;font-size:14px;display:block;margin-bottom:5px}
+.url{font-size:20px;font-weight:700;word-break:break-all;margin:8px 0 2px;direction:ltr}.hint{color:var(--mut);font-size:14px}
+.nic{margin-top:14px;text-align:start}.nic label{font-weight:700;font-size:14px;display:block;margin-bottom:5px}
 .nic select{width:100%;font-size:15px;padding:8px;border:1px solid var(--bd);border-radius:8px;background:#fff}
 .opt{display:flex;gap:12px;align-items:flex-start;padding:11px 4px;border-bottom:1px solid var(--bd);cursor:pointer}
 .lockopt{background:#fff4f2;border-radius:8px;margin-top:6px;border-bottom:0}
@@ -689,84 +920,102 @@ header img{width:64px;height:64px}h1{font-size:26px;margin:0;letter-spacing:.02e
 .pin input{font-size:18px;padding:8px 10px;width:150px;border:1px solid var(--bd);border-radius:8px}
 button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var(--acc);color:#fff;cursor:pointer}
 #saved{color:var(--ok);font-size:14px;min-height:20px;margin-top:10px}
-#shows{margin:0;padding-left:18px;color:var(--ink)}#shows li{margin:2px 0}
+#shows{margin:0;padding-inline-start:18px;color:var(--ink)}#shows li{margin:2px 0}
 .cr{font-size:13px;color:var(--mut);line-height:1.6;text-align:center;margin-top:22px}.cr a{color:var(--acc)}
-.cr img{vertical-align:middle;margin-right:4px}.links{margin-top:10px;font-size:14px}.links a{color:var(--acc)}
+.cr img{vertical-align:middle;margin-inline-end:4px}.links{margin-top:10px;font-size:14px}.links a{color:var(--acc)}
 </style></head><body><div class="wrap">
 <header><img src="/static/deckwhisperer-192.png" alt="__NAME__"><div><h1>__NAME__</h1>
-<small>Versione __VERSION__ &middot; Remote notes &amp; control for PowerPoint</small></div>
-<a class="guide" href="/guida" target="_blank">&#128214; Guida</a></header>
+<small><span data-i18n="info_ver">Version</span> __VERSION__ &middot; Remote notes &amp; control for PowerPoint</small></div>
+<a class="guide" id="guide" href="/guida" target="_blank">&#128214; <span data-i18n="g_guide">Guide</span></a></header>
 <div class="grid">
-<div class="card qr"><h2>1. Inquadra il QR</h2><img id="qrimg" src="/qr.svg" alt="QR">
-<div class="url" id="url">__URL__</div><div class="hint">Telefono collegato alla stessa rete Wi-Fi del PC</div>
-<div class="nic"><label for="nic">Scheda di rete del QR</label><select id="nic"></select>
-<div class="hint" style="margin-top:5px">Scegli la scheda a cui sono collegati i telefoni (es. quella della rete di produzione).</div></div></div>
-<div class="card"><h2>2. Cosa vuoi far vedere sui telefoni</h2>
-<label class="opt"><input type="checkbox" id="u_bar"><div><b>Barra degli strumenti</b><span>Pulsanti colorati, striscia con lucchetto, QR, info. Spenta: sul telefono compaiono solo gli elementi scelti qui sotto e non si può cambiare nulla</span></div></label>
-<label class="opt"><input type="checkbox" id="u_style"><div><b>Stile Testo</b><span>Font, dimensione, colori, interlinea e spaziatura</span></div></label>
-<label class="opt"><input type="checkbox" id="u_cur"><div><b>Slide in Onda</b><span>Immagine della slide che il pubblico sta vedendo</span></div></label>
-<label class="opt"><input type="checkbox" id="u_next"><div><b>Slide Successiva</b><span>Immagine della slide che arriva dopo</span></div></label>
-<label class="opt"><input type="checkbox" id="u_goto"><div><b>Vai alla Slide</b><span>Campo numero e pulsante Vai per saltare a una slide</span></div></label>
-<label class="opt"><input type="checkbox" id="u_ctl"><div><b>Navigazione</b><span>Pulsanti Avanti e Indietro per far scorrere le slide</span></div></label>
-<label class="opt lockopt"><input type="checkbox" id="u_lock"><div><b>Blocca schermo Remoto</b><span>Toglie tutti i comandi dal telefono: restano le note, che si possono solo scorrere se più lunghe dello schermo, e le anteprime scelte</span></div></label>
-<div class="pin"><label for="pin"><b>PIN per i comandi</b> (facoltativo)</label>
-<input id="pin" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="nessuno"><button id="savepin">Salva PIN</button></div>
+<div class="card qr"><h2 data-i18n="g_step1">1. Scan the QR</h2><img id="qrimg" src="/qr.svg" alt="QR">
+<div class="url" id="url">__URL__</div><div class="hint" data-i18n="g_hint">Phone connected to the same Wi-Fi network as the PC</div>
+<div class="nic"><label for="nic" data-i18n="g_nic">Network adapter of the QR</label><select id="nic"></select>
+<div class="hint" style="margin-top:5px" data-i18n="g_nic_hint">Pick the adapter your phones are connected to (e.g. the production network).</div></div>
+<div class="nic"><label for="langsel" data-i18n="g_lang">Language</label><select id="langsel"></select>
+<div class="hint" style="margin-top:5px" data-i18n="g_lang_hint">Default language of the phones (each phone can choose its own)</div></div></div>
+<div class="card"><h2 data-i18n="g_step2">2. What the phones will show</h2>
+<label class="opt"><input type="checkbox" id="u_bar"><div><b data-i18n="o_bar">Toolbar</b><span data-i18n="o_bar_d"></span></div></label>
+<label class="opt"><input type="checkbox" id="u_style"><div><b data-i18n="o_style">Text style</b><span data-i18n="o_style_d"></span></div></label>
+<label class="opt"><input type="checkbox" id="u_cur"><div><b data-i18n="o_cur">Current slide</b><span data-i18n="o_cur_d"></span></div></label>
+<label class="opt"><input type="checkbox" id="u_next"><div><b data-i18n="o_next">Next slide</b><span data-i18n="o_next_d"></span></div></label>
+<label class="opt"><input type="checkbox" id="u_goto"><div><b data-i18n="o_goto">Go to slide</b><span data-i18n="o_goto_d"></span></div></label>
+<label class="opt"><input type="checkbox" id="u_ctl"><div><b data-i18n="o_ctl">Navigation</b><span id="ctl_d" data-i18n="o_ctl_d"></span></div></label>
+<label class="opt lockopt"><input type="checkbox" id="u_lock"><div><b data-i18n="o_lock">Lock remote screen</b><span data-i18n="o_lock_d"></span></div></label>
+<div class="pin"><label for="pin"><b data-i18n="pin_label">PIN for the controls (optional)</b></label>
+<input id="pin" maxlength="20" inputmode="numeric" autocomplete="off"><button id="savepin" data-i18n="pin_save">Save PIN</button></div>
 <div id="saved"></div>
-<h2 style="margin-top:14px">Presentazioni in corso</h2><ul id="shows"><li>nessuna: apri una presentazione in PowerPoint</li></ul>
-<div class="links"><a href="/" target="_blank">Apri la pagina delle note su questo PC</a> &middot; <a href="/diagnostica" target="_blank">Diagnostica</a></div>
+<h2 style="margin-top:14px" data-i18n="shows_title">Presentations in progress</h2><ul id="shows"><li data-i18n="shows_none"></li></ul>
+<div class="links"><a href="/" target="_blank" data-i18n="open_notes">Open the notes page on this PC</a> &middot; <a href="/diagnostica" target="_blank" data-i18n="diag">Diagnostics</a></div>
 </div></div>
 <div class="cr">__CREDITS__</div></div>
 <script>
+const I18N = __I18N__;
 const $ = id => document.getElementById(id), K = ["bar","style","cur","next","goto","ctl","lock"];
+let lang = "en", noControl = false, autoIp = "";
+const tr = k => ((I18N.langs[lang] || {})[k]) || I18N.langs.en[k] || k;
+function applyLang(){
+  document.documentElement.lang = lang; document.documentElement.dir = I18N.rtl.indexOf(lang) >= 0 ? "rtl" : "ltr";
+  document.querySelectorAll("[data-i18n]").forEach(e => { e.textContent = tr(e.getAttribute("data-i18n")); });
+  $("pin").placeholder = tr("pin_ph"); document.title = "__NAME__ - " + tr("g_title");
+  $("guide").href = "/guida?lang=" + lang;
+  if ($("credby")) $("credby").textContent = tr("credits_by");
+  if (noControl) $("ctl_d").textContent = tr("no_control_note");
+  const au = $("nic").options[0]; if (au) au.textContent = tr("g_nic_auto") + (autoIp ? " - " + autoIp : "");
+  shows();
+}
 let timer = null;
-function flash(t){ $("saved").textContent = t; clearTimeout(timer); timer = setTimeout(() => { $("saved").textContent = ""; }, 2500); }
+function flash(k){ $("saved").textContent = tr(k); clearTimeout(timer); timer = setTimeout(() => { $("saved").textContent = ""; }, 2500); }
 async function save(){
   const ui = {}; K.forEach(k => { ui[k] = $("u_" + k).checked; });
   try {
     const r = await fetch("/settings", { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value }) });
-    flash(r.ok ? "Salvato: i telefoni collegati si aggiornano subito" : "Impostazioni non valide");
-    if (r.ok) load(false);
-  } catch(e) { flash("Programma non raggiungibile"); }
+      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value }) });
+    flash(r.ok ? "saved" : "invalid");
+    if (r.ok) { lang = $("langsel").value; applyLang(); load(false); }
+  } catch(e) { flash("unreach"); }
 }
 function load(first){
   fetch("/settings.json").then(r => r.json()).then(d => {
     if (first) {
       K.forEach(k => { $("u_" + k).checked = k === "lock" ? d.ui[k] === true : d.ui[k] !== false; });
       $("pin").value = d.pin || "";
-      const sel = $("nic"); sel.innerHTML = "";
-      const auto = document.createElement("option"); auto.value = "";
-      auto.textContent = "Automatica (consigliata)" + (d.auto_ip ? " - " + d.auto_ip : ""); sel.appendChild(auto);
+      const sel = $("nic"); sel.innerHTML = ""; autoIp = d.auto_ip || "";
+      const auto = document.createElement("option"); auto.value = ""; sel.appendChild(auto);
       d.nics.forEach(n => { const o = document.createElement("option"); o.value = n.ip; o.textContent = n.name + " - " + n.ip; sel.appendChild(o); });
-      sel.value = d.nic || "";
-      if (sel.value !== (d.nic || "")) sel.value = "";
-      $("u_ctl").disabled = !!d.no_control; $("u_goto").disabled = !!d.no_control;
-      if (d.no_control) $("u_ctl").parentNode.querySelector("span").textContent = "Disattivati: il programma è stato avviato con --no-control";
+      sel.value = d.nic || ""; if (sel.value !== (d.nic || "")) sel.value = "";
+      const ls = $("langsel"); ls.innerHTML = "";
+      Object.keys(d.langs).forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = d.langs[c]; ls.appendChild(o); });
+      ls.value = d.lang; lang = d.lang; noControl = !!d.no_control;
+      $("u_ctl").disabled = noControl; $("u_goto").disabled = noControl;
+      applyLang();
     }
     $("url").textContent = d.url; $("qrimg").src = "/qr.svg?t=" + Date.now();
-  }).catch(() => flash("Programma non raggiungibile"));
+  }).catch(() => flash("unreach"));
 }
 K.forEach(k => { $("u_" + k).onchange = save; });
-$("nic").onchange = save;
+$("nic").onchange = save; $("langsel").onchange = save;
 $("savepin").onclick = save;
 $("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
-load(true);
+let lastShows = [];
 function shows(){
-  fetch("/state").then(r => r.json()).then(s => {
-    const ul = $("shows"); ul.innerHTML = "";
-    if (!s.shows.length) { ul.innerHTML = "<li>nessuna: apri una presentazione in PowerPoint</li>"; return; }
-    s.shows.forEach(x => { const li = document.createElement("li"); li.textContent = x.title + " - slide " + x.index + " / " + x.total; ul.appendChild(li); });
-  }).catch(() => {});
+  fetch("/state").then(r => r.json()).then(s => { lastShows = s.shows; drawShows(); }).catch(() => {});
 }
+function drawShows(){
+  const ul = $("shows"); ul.innerHTML = "";
+  if (!lastShows.length) { const li = document.createElement("li"); li.textContent = tr("shows_none"); ul.appendChild(li); return; }
+  lastShows.forEach(x => { const li = document.createElement("li"); li.textContent = x.title + " - " + tr("slide") + " " + x.index + " / " + x.total; ul.appendChild(li); });
+}
+load(true); applyLang();
 shows(); setInterval(shows, 2000);
 </script></body></html>"""
 
 
-GUIDE_FILES = {"it": "ISTRUZIONI.md", "en": "INSTRUCTIONS.md"}
+GUIDE_FILES = {c: "MANUAL-%s.md" % c for c in ("en", "it", "fr", "es", "ar", "zh")}
 
 
 def guide_path(lang):
-    name = GUIDE_FILES.get(lang, GUIDE_FILES["it"])
+    name = GUIDE_FILES.get(lang, GUIDE_FILES["en"])
     for cand in (resource_path("docs", name), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", name)):
         if os.path.exists(cand):
             return cand
@@ -781,10 +1030,9 @@ def _inline(t):
 
     def link(m):
         url = m.group(2)
-        if url.endswith("INSTRUCTIONS.md"):
-            url = "/guida?lang=en"
-        elif url.endswith("ISTRUZIONI.md"):
-            url = "/guida?lang=it"
+        mm = re.search(r"MANUAL-([a-z]{2})\.md$", url)
+        if mm:
+            url = "/guida?lang=" + mm.group(1)
         if not url.startswith(("http://", "https://", "/")):
             return m.group(1)
         return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (url, m.group(1))
@@ -838,31 +1086,38 @@ def md_to_html(md):
     return "\n".join(out)
 
 
-GUIDE_PAGE = """<!DOCTYPE html><html lang="__LANG__"><head><meta charset="utf-8">
+GUIDE_PAGE = """<!DOCTYPE html><html lang="__LANG__" dir="__DIR__"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - __TITLE__</title>
 <link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
-<style>body{margin:0;background:#f4f6f7;color:#14262b;font:16px/1.6 Segoe UI,Arial,sans-serif}
+<style>body{margin:0;background:#f4f6f7;color:#14262b;font:16px/1.6 Segoe UI,Arial,"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif}
 .wrap{max-width:860px;margin:0 auto;padding:18px 16px 40px;background:#fff;min-height:100vh}
 .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #d9e0e2;padding-bottom:10px;margin-bottom:6px}
-.top img{width:44px;height:44px}.top a{margin-left:auto}.sw a{margin-left:10px;font-weight:700}
+.top img{width:44px;height:44px}.sw{margin-inline-start:auto;display:flex;gap:6px;flex-wrap:wrap}
+.sw a{padding:4px 10px;border:1px solid #14434d;border-radius:14px;text-decoration:none;font-size:14px}
+.sw a.cur{background:#14434d;color:#fff}
 h1{font-size:26px}h2{font-size:21px;margin-top:28px}h3{font-size:17px}
-table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #d9e0e2;padding:7px 10px;text-align:left;vertical-align:top}
-th{background:#eef3f4}code{background:#eef3f4;padding:1px 5px;border-radius:4px}a{color:#14434d}</style></head><body><div class="wrap">
+table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #d9e0e2;padding:7px 10px;text-align:start;vertical-align:top}
+th{background:#eef3f4}code{background:#eef3f4;padding:1px 5px;border-radius:4px;direction:ltr;unicode-bidi:isolate}a{color:#14434d}</style></head><body><div class="wrap">
 <div class="top"><img src="/static/deckwhisperer-64.png" alt=""><b>__NAME__</b>
-<span class="sw"><a href="/guida?lang=it">Italiano</a><a href="/guida?lang=en">English</a></span></div>
+<span class="sw">__SWITCH__</span></div>
 __BODY__</div></body></html>"""
 
 
 def guide_page(lang):
-    lang = lang if lang in GUIDE_FILES else "it"
+    lang = lang if lang in GUIDE_FILES else "en"
     pth = guide_path(lang)
     if pth:
         with open(pth, encoding="utf-8") as f:
             body = md_to_html(f.read())
     else:
-        body = "<p>Guida non trovata / Guide not found.</p>"
-    return (GUIDE_PAGE.replace("__LANG__", lang).replace("__NAME__", html_escape(APP_NAME))
-            .replace("__TITLE__", "Guida" if lang == "it" else "Guide").replace("__BODY__", body))
+        body = "<p>Guide not found.</p>"
+    names = I18N["names"]
+    switch = "".join('<a href="/guida?lang=%s"%s>%s</a>' % (c, ' class="cur"' if c == lang else "", html_escape(names.get(c, c)))
+                     for c in GUIDE_FILES)
+    title = I18N["langs"].get(lang, {}).get("g_guide", "Guide")
+    return (GUIDE_PAGE.replace("__LANG__", lang).replace("__DIR__", "rtl" if lang in I18N["rtl"] else "ltr")
+            .replace("__NAME__", html_escape(APP_NAME)).replace("__TITLE__", html_escape(title))
+            .replace("__SWITCH__", switch).replace("__BODY__", body))
 
 
 # -------------------------------------------------------------------- Server
@@ -902,10 +1157,10 @@ class Handler(BaseHTTPRequestHandler):
                 job["event"].wait(6)
                 data = job["result"]
                 if not data and not job["error"]:
-                    job["error"] = "PowerPoint non ha risposto entro 6 secondi"
+                    job["error"] = "PowerPoint did not answer within 6 seconds"
                     log("Anteprima slide %s/%s: %s" % (sid, index, job["error"]))
         if not data:
-            msg = (job["error"] if not DEMO_MODE else "") or "Anteprima non disponibile"
+            msg = (job["error"] if not DEMO_MODE else "") or "Preview not available"
             self._send(404, "text/plain; charset=utf-8", msg[:300].encode("utf-8"))
             return
         self.send_response(200)
@@ -924,7 +1179,7 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(min(length, 4096)) if length > 0 else b""
         if path == "/settings":
             if not self._is_local():
-                self._json(403, {"ok": False, "error": "solo dal PC"})
+                self._json(403, {"ok": False, "error": "local only"})
                 return
             try:
                 ok = apply_settings(json.loads(raw.decode("utf-8") or "{}"))
@@ -933,15 +1188,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200 if ok else 400, {"ok": ok})
             return
         if path != "/cmd":
-            self._json(404, {"ok": False, "error": "non trovato"})
+            self._json(404, {"ok": False, "error": "not found"})
             return
         if not CONTROL:
-            self._json(403, {"ok": False, "error": "comandi disabilitati"})
+            self._json(403, {"ok": False, "error": "controls disabled"})
             return
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
         except Exception:
-            self._json(400, {"ok": False, "error": "richiesta non valida"})
+            self._json(400, {"ok": False, "error": "invalid request"})
             return
         if PIN and str(body.get("pin", "")) != PIN:
             self._json(403, {"ok": False, "error": "pin"})
@@ -955,7 +1210,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 cmd["n"] = int(body.get("n"))
             except Exception:
-                self._json(400, {"ok": False, "error": "numero slide non valido"})
+                self._json(400, {"ok": False, "error": "invalid slide number"})
                 return
         CMDQ.put(cmd)
         self._json(200, {"ok": True})
@@ -964,24 +1219,24 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8",
-                       PAGE.replace("__CREDITS__", CREDITS_HTML).replace("__VERSION__", APP_VERSION).encode("utf-8"))
+                       PAGE.replace("__I18N__", I18N_JSON).replace("__CREDITS__", CREDITS_HTML).replace("__VERSION__", APP_VERSION).encode("utf-8"))
         elif path.startswith("/slide/"):
             m = SLIDE_RE.match(path)
             if not m:
                 log("Indirizzo anteprima non riconosciuto (404): %s" % self.path[:150])
-                self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+                self._send(404, "text/plain; charset=utf-8", b"Not found")
                 return
             self._slide(m.group(1), int(m.group(2)))
         elif path.startswith("/static/") or path == "/favicon.ico":
             name = "deckwhisperer.ico" if path == "/favicon.ico" else path[len("/static/"):]
             if name not in ASSET_FILES:
-                self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+                self._send(404, "text/plain; charset=utf-8", b"Not found")
                 return
             try:
                 with open(resource_path("assets", name), "rb") as f:
                     data = f.read()
             except OSError:
-                self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+                self._send(404, "text/plain; charset=utf-8", b"Not found")
                 return
             self._send(200, ASSET_FILES[name], data)
         elif path == "/diagnostica":
@@ -993,21 +1248,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
         elif path in ("/start", "/qr"):
             if not self._is_local():
-                self._send(403, "text/plain; charset=utf-8", "Pagina di gestione: si apre solo dal PC dove gira DeckWhisperer".encode("utf-8"))
+                self._send(403, "text/plain; charset=utf-8", "Management page: it only opens on the PC running DeckWhisperer".encode("utf-8"))
                 return
-            self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__URL__", BASE_URL).replace("__NAME__", html_escape(APP_NAME))
+            self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__I18N__", I18N_JSON).replace("__URL__", BASE_URL).replace("__NAME__", html_escape(APP_NAME))
                        .replace("__VERSION__", APP_VERSION).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
         elif path == "/guida":
             q = self.path.split("?", 1)[1] if "?" in self.path else ""
-            lang = "en" if "lang=en" in q else "it"
+            mm = re.search(r"(?:^|&)lang=([a-z]{2})(?:&|$)", q)
+            lang = mm.group(1) if mm and mm.group(1) in GUIDE_FILES else LANG
             self._send(200, "text/html; charset=utf-8", guide_page(lang).encode("utf-8"))
         elif path == "/settings.json":
             if not self._is_local():
-                self._send(403, "text/plain; charset=utf-8", b"Solo dal PC")
+                self._send(403, "text/plain; charset=utf-8", b"Local only")
                 return
             self._send(200, "application/json; charset=utf-8",
                        json.dumps({"ui": UI, "pin": PIN, "no_control": NO_CONTROL, "url": BASE_URL,
-                                   "nics": list_nics(), "nic": NIC_IP, "auto_ip": primary_ip()}).encode("utf-8"))
+                                   "nics": list_nics(), "nic": NIC_IP, "auto_ip": primary_ip(),
+                                   "lang": LANG, "langs": I18N["names"]}).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))
@@ -1034,7 +1291,7 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         else:
             log("Indirizzo non riconosciuto (404): %s" % self.path[:150])
-            self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+            self._send(404, "text/plain; charset=utf-8", b"Not found")
 
 
 def local_ips():
@@ -1063,7 +1320,7 @@ def primary_ip():
 
 
 PAGE = r"""<!DOCTYPE html>
-<html lang="it">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1089,8 +1346,8 @@ PAGE = r"""<!DOCTYPE html>
   #dot { width:10px; height:10px; border-radius:50%; background:#c33; display:inline-block; }
   #dot.on { background:#3c3; }
   #main { flex:1; overflow:auto; padding:2vh 3vw; }
-  #notes { white-space:pre-wrap; overflow-wrap:anywhere;
-           font-family: Arial, sans-serif; font-size:48px; line-height:1.3; letter-spacing:0; }
+  #notes { white-space:pre-wrap; overflow-wrap:anywhere; unicode-bidi:plaintext; text-align:start;
+           font-family: Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Noto Naskh Arabic", sans-serif; font-size:48px; line-height:1.3; letter-spacing:0; }
   #notes.wait { opacity:.5; font-style:italic; }
   #ctl { display:flex; gap:10px; align-items:stretch; padding:8px 10px; background:#222;
          border-top:1px solid #444; color:#eee; font:15px Arial, sans-serif; }
@@ -1180,19 +1437,19 @@ PAGE = r"""<!DOCTYPE html>
 </head>
 <body>
 <div id="strip">
-  <button id="sbar" title="Riapri la barra">&#9776; Barra</button>
-  <button id="sfull" title="Schermo intero">&#9974; Schermo</button>
-  <button id="sctl" class="on" title="Mostra/nascondi Navigazione e Vai alla slide">&#9664;&#9654; Navigazione</button>
-  <button id="slock" title="Blocca lo schermo">&#128274; Blocca</button>
-  <button id="sunlock" title="Tieni premuto 5 secondi per sbloccare"><span class="prog"></span><span>&#128275; Tieni premuto 5 secondi per sbloccare</span></button>
+  <button id="sbar" title="Reopen the toolbar">&#9776; <span id="t_sbar">Toolbar</span></button>
+  <button id="sfull" title="Full screen">&#9974; <span id="t_sfull">Screen</span></button>
+  <button id="sctl" class="on" title="Show/hide Navigation and Go to slide">&#9664;&#9654; <span id="t_sctl">Navigation</span></button>
+  <button id="slock" title="Lock the screen">&#128274; <span id="t_slock">Lock</span></button>
+  <button id="sunlock" title="Press and hold for 5 seconds to unlock"><span class="prog"></span><span>&#128275; <span id="t_sunlock">Press and hold for 5 seconds to unlock</span></span></button>
 </div>
 <div id="lockov"></div>
 <div id="bar">
-  <label id="showlbl">Presentazione
+  <label id="showlbl"><span id="t_show">Presentation</span>
     <select id="show"></select>
   </label>
   <span class="grp">
-  <label>Font
+  <label><span id="t_font">Font</span>
     <select id="font">
       <option value="Arial, sans-serif">Arial</option>
       <option value="Verdana, sans-serif">Verdana</option>
@@ -1205,55 +1462,55 @@ PAGE = r"""<!DOCTYPE html>
       <option value="'Courier New', monospace">Courier New</option>
     </select>
   </label>
-  <label>Dimensione
+  <label><span id="t_size">Size</span>
     <input type="number" id="size" min="10" max="300" step="2" inputmode="numeric">
-    <button id="sizeDown" title="Riduci">a&minus;</button>
-    <button id="sizeUp" title="Aumenta">A+</button>
+    <button id="sizeDown" title="Smaller">a&minus;</button>
+    <button id="sizeUp" title="Bigger">A+</button>
   </label>
-  <label>Testo <input type="color" id="fg"></label>
-  <label>Sfondo <input type="color" id="bg"></label>
-  <label>Interlinea <input type="range" id="lh" min="0.9" max="3" step="0.05"> <span id="lhv"></span></label>
-  <label>Spaziatura <input type="range" id="ls" min="-2" max="20" step="0.5"> <span id="lsv"></span></label>
-  <button id="reset">Ripristina</button>
+  <label><span id="t_text">Text</span> <input type="color" id="fg"></label>
+  <label><span id="t_bg">Background</span> <input type="color" id="bg"></label>
+  <label><span id="t_lh">Line spacing</span> <input type="range" id="lh" min="0.9" max="3" step="0.05"> <span id="lhv"></span></label>
+  <label><span id="t_ls">Letter spacing</span> <input type="range" id="ls" min="-2" max="20" step="0.5"> <span id="lsv"></span></label>
+  <button id="reset">Reset</button>
   </span>
-  <div class="sec">Cosa mostrare</div>
+  <div class="sec" id="sec1">What to show</div>
   <div class="chips">
-    <button id="styleb" class="tg c-style" title="Mostra/nascondi i comandi del testo">Stile testo</button>
-    <button id="ctlb" class="tg c-ctl" title="Mostra/nascondi Navigazione e Vai alla slide">Navigazione</button>
-    <button id="curb" class="tg c-cur" title="Mostra/nascondi la slide in onda">Slide in onda</button>
-    <button id="nextb" class="tg c-next" title="Mostra/nascondi la slide successiva">Slide successiva</button>
+    <button id="styleb" class="tg c-style" title="Show/hide the text style controls">Text style</button>
+    <button id="ctlb" class="tg c-ctl" title="Show/hide Navigation and Go to slide">Navigation</button>
+    <button id="curb" class="tg c-cur" title="Show/hide the current slide">Current slide</button>
+    <button id="nextb" class="tg c-next" title="Show/hide the next slide">Next slide</button>
   </div>
-  <div class="sec">Strumenti</div>
+  <div class="sec" id="sec2">Tools</div>
   <div class="chips">
-    <button id="full" class="act c-full">Schermo intero</button>
+    <button id="full" class="act c-full">Full screen</button>
     <button id="qrb" class="act c-qr">QR</button>
     <button id="infob" class="act c-info">Info</button>
-    <button id="lockb" class="act c-lock">&#128274; Blocca schermo</button>
-    <button id="hide" class="act c-hide">Nascondi barra</button>
+    <button id="lockb" class="act c-lock">&#128274; <span id="t_lockb">Lock screen</span></button>
+    <button id="hide" class="act c-hide">Hide toolbar</button>
   </div>
-  <div id="info"><span id="pos"></span><span id="dot" title="Presentazione"></span></div>
+  <div id="info"><span id="pos"></span><span id="dot" title="Presentation"></span></div>
 </div>
 <div id="slides">
-  <figure id="figcur"><figcaption>In onda</figcaption><img id="imgcur" alt="Slide in onda"><div class="ph" id="phcur"></div></figure>
-  <figure id="fignext"><figcaption>Successiva</figcaption><img id="imgnext" alt="Slide successiva"><div class="ph" id="phnext"></div></figure>
+  <figure id="figcur"><figcaption id="cap_cur">On air</figcaption><img id="imgcur" alt=""><div class="ph" id="phcur"></div></figure>
+  <figure id="fignext"><figcaption id="cap_next">Next</figcaption><img id="imgnext" alt=""><div class="ph" id="phnext"></div></figure>
 </div>
-<div id="main"><div id="notes" class="wait">In attesa della presentazione…</div></div>
+<div id="main"><div id="notes" class="wait" dir="auto">Waiting for the presentation…</div></div>
 <div id="ctl">
-  <button id="prev" class="big">◀ Indietro</button>
+  <button id="prev" class="big">◀ <span id="t_prev">Previous</span></button>
   <div class="mid">
     <span id="ctlpos">–</span>
-    <span class="goto"><input type="number" id="gonum" min="1" inputmode="numeric"> <button id="go">Vai</button></span>
+    <span class="goto"><input type="number" id="gonum" min="1" inputmode="numeric"> <button id="go">Go</button></span>
     <span id="ctlmsg"></span>
   </div>
-  <button id="next" class="big">Avanti ▶</button>
+  <button id="next" class="big"><span id="t_next">Next</span> ▶</button>
 </div>
 <div id="infoov">
   <div id="infobox">
     <img class="logo" src="/static/deckwhisperer-192.png" alt="DeckWhisperer">
-    <div class="ver">Versione __VERSION__</div>
+    <div class="ver"><span id="t_ver">Version</span> __VERSION__</div>
     <div>__CREDITS__</div>
-    <div style="margin-top:8px;font-size:13px"><a href="/diagnostica" target="_blank">Diagnostica</a></div>
-    <div style="margin-top:12px;color:#888;font-size:12px">Tocca per chiudere</div>
+    <div style="margin-top:8px;font-size:13px"><a id="t_guide" href="/guida" target="_blank">Guide</a> &middot; <a id="t_diag" href="/diagnostica" target="_blank">Diagnostics</a></div>
+    <div id="t_close" style="margin-top:12px;color:#888;font-size:12px">Tap to close</div>
   </div>
 </div>
 <div id="qrov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9;align-items:center;justify-content:center">
@@ -1268,6 +1525,30 @@ const $ = id => document.getElementById(id);
 const notes = $("notes");
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e) {} };
+
+/* ---- lingua: inglese di default; la sceglie il PC dalla pagina di gestione e vale per tutti i telefoni ---- */
+const I18N = __I18N__;
+let lang = "en";
+const tr = k => ((I18N.langs[lang] || {})[k]) || I18N.langs.en[k] || k;
+const TXT = { t_sbar:"s_bar", t_sfull:"s_full", t_sctl:"s_nav", t_slock:"s_lock", t_sunlock:"s_unlock", t_show:"present",
+  t_font:"font", t_size:"size", t_text:"text", t_bg:"bg", t_lh:"lh", t_ls:"ls", reset:"reset", sec1:"sec_show", sec2:"sec_tools",
+  styleb:"b_style", ctlb:"b_nav", curb:"b_cur", nextb:"b_next", full:"b_full", qrb:"b_qr", infob:"b_info", t_lockb:"b_lock", hide:"b_hide",
+  cap_cur:"cap_cur", cap_next:"cap_next", t_prev:"c_prev", t_next:"c_next", go:"c_go", t_ver:"info_ver", t_guide:"info_guide",
+  t_diag:"info_diag", t_close:"info_close", credby:"credits_by" };
+const TTL = { sbar:"tt_s_bar", sfull:"tt_s_full", slock:"tt_s_lock", sunlock:"s_unlock", sizeDown:"tt_down", sizeUp:"tt_up",
+  styleb:"tt_style", ctlb:"tt_nav", curb:"tt_cur", nextb:"tt_next", dot:"present" };
+function pickLang() {
+  // la lingua e' quella scelta nella pagina di gestione sul PC
+  const l = (st && st.lang) || "en";
+  return I18N.langs[l] ? l : "en";
+}
+function applyLang() {
+  lang = pickLang();
+  document.documentElement.lang = lang;
+  document.documentElement.dir = I18N.rtl.indexOf(lang) >= 0 ? "rtl" : "ltr";
+  Object.keys(TXT).forEach(id => { $(id).textContent = tr(TXT[id]); });
+  Object.keys(TTL).forEach(id => { $(id).setAttribute("title", tr(TTL[id])); });
+}
 
 function apply() {
   const r = document.documentElement.style;
@@ -1306,7 +1587,7 @@ document.addEventListener("fullscreenchange", () => { $("sfull").classList.toggl
 apply();
 
 /* ---- stato, scelta presentazione ---- */
-let st = { shows: [], pin_required: false, control: true, ui: { bar: true, style: true, cur: true, next: true, goto: true, ctl: true, lock: false } };
+let st = { lang: "en", shows: [], pin_required: false, control: true, ui: { bar: true, style: true, cur: true, next: true, goto: true, ctl: true, lock: false } };
 const uiOn = k => !st.ui || st.ui[k] !== false;
 const remLock = () => !!(st.ui && st.ui.lock === true);   // "Blocca schermo Remoto": solo note, nessun comando
 // vista fissa: barra spenta dal PC o schermo remoto bloccato -> conta solo la scelta della pagina di gestione
@@ -1337,7 +1618,7 @@ function render() {
   if (cur) sel.value = cur.id;
 
   if (!cur) {
-    notes.textContent = "In attesa della presentazione…";
+    notes.textContent = tr("wait");
     notes.classList.add("wait");
     $("pos").textContent = ""; $("ctlpos").textContent = "–";
     lastKey = null;
@@ -1345,10 +1626,10 @@ function render() {
     return;
   }
   notes.classList.remove("wait");
-  $("pos").textContent = cur.title + "  —  slide " + cur.index + " / " + cur.total;
+  $("pos").textContent = cur.title + "  —  " + tr("slide") + " " + cur.index + " / " + cur.total;
   $("ctlpos").textContent = cur.index + " / " + cur.total;
   $("gonum").max = cur.total;
-  notes.textContent = cur.notes && cur.notes.trim() ? cur.notes : "(nessuna nota per questa slide)";
+  notes.textContent = cur.notes && cur.notes.trim() ? cur.notes : tr("no_notes");
   const k = cur.id + "#" + cur.index;
   if (k !== lastKey) { $("main").scrollTop = 0; lastKey = k; }
   updateSlides(cur);
@@ -1363,21 +1644,21 @@ function setSlide(img, ph, on, id, index, title, emptyText) {
   ph.style.display = "none"; img.style.display = "block";
 }
 function updateSlides(cur) {
-  const wait = "In attesa della presentazione…";
+  const wait = tr("wait");
   setSlide($("imgcur"), $("phcur"), eff("cur", curOn), cur ? cur.id : "", cur ? cur.index : 0, cur ? cur.title : "", wait);
   const hasNext = !!cur && cur.index < cur.total;
   setSlide($("imgnext"), $("phnext"), eff("next", nextOn), hasNext ? cur.id : "", hasNext ? cur.index + 1 : 0,
-           cur ? cur.title : "", cur ? "Ultima slide" : wait);
+           cur ? cur.title : "", cur ? tr("last") : wait);
 }
 ["imgcur", "imgnext"].forEach(id => {
   $(id).onerror = () => {
     const ph = $(id === "imgcur" ? "phcur" : "phnext");
     const src = $(id).getAttribute("data-src");
     $(id).style.display = "none"; $(id).removeAttribute("data-src");
-    ph.textContent = "Anteprima non disponibile"; ph.style.display = "flex";
+    ph.textContent = tr("prev_na"); ph.style.display = "flex";
     // chiede al programma il motivo e lo mostra al posto dell'anteprima
     if (src) fetch(src).then(r => r.text()).then(t => {
-      if (t) ph.textContent = "Anteprima non disponibile: " + t.slice(0, 220);
+      if (t) ph.textContent = tr("prev_na") + ": " + t.slice(0, 220);
     }).catch(() => {});
   };
 });
@@ -1392,23 +1673,23 @@ function msg(t) {
 }
 async function sendCmd(action, n, retry) {
   const cur = currentShow();
-  if (!cur) { msg("Nessuna presentazione"); return; }
+  if (!cur) { msg(tr("m_nopres")); return; }
   try {
     const r = await fetch("/cmd", { method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ id: cur.id, action: action, n: n, pin: pin }) });
     if (r.status === 403) {
       let err = ""; try { err = (await r.json()).error; } catch(e) {}
       if (err === "pin") {
-        if (retry) { msg("PIN errato"); pin = ""; lsSet("pptPin", ""); return; }
-        const p = prompt("PIN per i comandi:");
+        if (retry) { msg(tr("m_pin_wrong")); pin = ""; lsSet("pptPin", ""); return; }
+        const p = prompt(tr("m_pin_prompt"));
         if (p === null) return;
         pin = p; lsSet("pptPin", pin);
         return sendCmd(action, n, true);
       }
-      msg("Comandi disabilitati"); return;
+      msg(tr("m_disabled")); return;
     }
-    if (!r.ok) msg("Errore comando");
-  } catch(e) { msg("Connessione persa"); }
+    if (!r.ok) msg(tr("m_err"));
+  } catch(e) { msg(tr("m_lost")); }
 }
 $("next").onclick = () => sendCmd("next");
 $("prev").onclick = () => sendCmd("prev");
@@ -1514,9 +1795,10 @@ $("sctl").onclick = () => $("ctlb").onclick();
 /* ---- collegamento in tempo reale ---- */
 function connect() {
   const es = new EventSource("/events");
-  es.onmessage = e => { try { st = JSON.parse(e.data); applyCtl(); render(); } catch(err) {} };
+  es.onmessage = e => { try { st = JSON.parse(e.data); applyLang(); applyCtl(); render(); } catch(err) {} };
   es.onerror = () => { $("dot").className = ""; };
 }
+applyLang();
 applyCtl();
 connect();
 </script>
@@ -1537,7 +1819,7 @@ def main():
     ap.add_argument("--pin", default="", help="PIN richiesto per i comandi avanti/indietro")
     ap.add_argument("--no-control", action="store_true", help="disabilita i comandi dal telefono")
     ap.add_argument("--demo", action="store_true", help="simula presentazioni (senza PowerPoint)")
-    ap.add_argument("--no-browser", action="store_true", help="non aprire la pagina di avvio sul PC")
+    ap.add_argument("--no-browser", action="store_true", help="do not open the management page on the PC")
     args = ap.parse_args()
     NO_CONTROL = bool(args.no_control)
     DEMO_MODE = bool(args.demo)
@@ -1545,13 +1827,18 @@ def main():
     PIN = str(args.pin or saved_pin or "")
     CONTROL = ui_state()["ctl"]
 
-    if not args.demo:
+    if not args.demo and IS_MAC:
+        import shutil
+        if not shutil.which("osascript"):
+            print("ERROR: osascript not found (macOS with PowerPoint for Mac is required). Use --demo to try without PowerPoint.")
+            return
+    elif not args.demo:
         try:
             import win32com.client  # noqa: F401
         except Exception:
-            print("ERRORE: serve Windows con pywin32 (e PowerPoint installato).")
-            print("Per provare senza PowerPoint usa --demo.")
-            input("Premi Invio per chiudere...")
+            print("ERROR: Windows with pywin32 and PowerPoint installed is required.")
+            print("To try without PowerPoint use --demo.")
+            input("Press Enter to close...")
             return
 
     srv = None
@@ -1564,14 +1851,14 @@ def main():
         except OSError:
             continue
     if srv is None:
-        print("ERRORE: nessuna porta libera tra %d e %d." % (args.port, args.port + 19))
+        print("ERROR: no free port between %d and %d." % (args.port, args.port + 19))
         input("Premi Invio per chiudere...")
         return
     srv.daemon_threads = True
 
     PORT = port
     update_base_url()
-    target = poll_demo if args.demo else poll_powerpoint
+    target = poll_demo if args.demo else (poll_powerpoint_mac if IS_MAC else poll_powerpoint)
     threading.Thread(target=target, args=(args.interval,), daemon=True).start()
 
     try:
@@ -1582,34 +1869,34 @@ def main():
     print("=" * 60)
     print(" %s %s - Remote notes & control for PowerPoint" % (APP_NAME, APP_VERSION))
     print("=" * 60)
-    print(" Indirizzo per smartphone e altri PC della rete:")
+    print(" Address for phones and other PCs on the network:")
     print("   " + BASE_URL)
     others = ["http://%s:%d/" % (i, port) for i in local_ips() if ("http://%s:%d/" % (i, port)) != BASE_URL]
     if others:
-        print(" Altri indirizzi possibili (se ci sono piu' schede di rete):")
+        print(" Other possible addresses (if there are several network cards):")
         for o in others:
             print("   " + o)
     print()
     try:
         print(qr_console(BASE_URL))
     except Exception as e:
-        print(" (QR in console non disponibile: %s)" % e)
+        print(" (console QR not available: %s)" % e)
     print()
-    print(" Pagina di gestione (QR, scheda di rete e scelta di cosa mostrare sui telefoni): http://localhost:%d/start" % port)
+    print(" Management page (QR, network card, language and what to show on phones): http://localhost:%d/start" % port)
     if not CONTROL:
-        print(" Comandi avanti/indietro: DISABILITATI")
+        print(" Next/previous controls: DISABLED")
     elif PIN:
-        print(" Comandi avanti/indietro: attivi, protetti da PIN")
+        print(" Next/previous controls: enabled, protected by PIN")
     else:
-        print(" Comandi avanti/indietro: attivi, SENZA PIN (chiunque sulla rete puo' usarli;")
-        print("   per proteggerli imposta un PIN nella pagina di avvio)")
-    print(" Alla prima esecuzione Windows chiede di consentire l'accesso alla rete:")
-    print(" scegli 'Reti private' (e 'Reti pubbliche' se il Wi-Fi e' visto come pubblico).")
-    print(" Registro errori: " + log_path())
-    print(" Diagnostica: http://localhost:%d/diagnostica" % port)
-    print(" Chiudi questa finestra per fermare il programma.")
+        print(" Next/previous controls: enabled, NO PIN (anyone on the network can use them;")
+        print("   set a PIN in the management page to protect them)")
+    print(" On first run Windows asks to allow network access:")
+    print(" choose 'Private networks' (and 'Public networks' if your Wi-Fi is seen as public).")
+    print(" Error log: " + log_path())
+    print(" Diagnostics: http://localhost:%d/diagnostica" % port)
+    print(" Close this window to stop the program.")
     print()
-    print(" DeckWhisperer - Ideato e sviluppato da www.andreabattaglioli.it")
+    print(" MEFISTOFELE DeckWhisperer - Created and developed by www.andreabattaglioli.it")
     print(" Powered by www.mywebtvlive.com - Made in Bolognina")
 
     log("Avvio %s %s - indirizzo %s" % (APP_NAME, APP_VERSION, BASE_URL))
@@ -1630,4 +1917,4 @@ if __name__ == "__main__":
     except Exception:
         import traceback
         traceback.print_exc()
-        input("Errore. Premi Invio per chiudere...")
+        input("Error. Press Enter to close...")
