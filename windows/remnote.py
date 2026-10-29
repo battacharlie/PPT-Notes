@@ -29,7 +29,14 @@ import webbrowser
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 APP_NAME = "reMNote"
-APP_VERSION = "1.0"
+try:
+    from _buildinfo import APP_VERSION  # scritto dalla compilazione (tools/buildinfo.py)
+except Exception:
+    try:  # avvio da sorgente: legge il file VERSION della repo
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "VERSION"), encoding="utf-8") as _f:
+            APP_VERSION = _f.read().strip()
+    except Exception:
+        APP_VERSION = "sviluppo"
 PIN = ""
 CONTROL = True
 BASE_URL = ""

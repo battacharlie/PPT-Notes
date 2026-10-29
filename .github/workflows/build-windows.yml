@@ -1,8 +1,8 @@
-name: Build Windows
+name: Compila
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -13,22 +13,45 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      # Versione: dal tag vX.Y, oppure su main dal file VERSION. Su main, se la
+      # versione non è ancora pubblicata, la release viene creata in automatico.
+      - name: Versione
+        id: ver
+        shell: bash
+        run: |
+          RELEASE=false
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="$GITHUB_REF_NAME"; RELEASE=true
+          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            VERSION="v$(tr -d ' \r\n' < VERSION)"
+            if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" > /dev/null; then
+              VERSION="$VERSION-main-${GITHUB_SHA::7}"   # già pubblicata: compilazione di prova
+            else
+              RELEASE=true
+            fi
+          else
+            VERSION="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
+          fi
+          if [ "$RELEASE" = true ]; then NUM="${VERSION#v}"; else NUM="0.0.0"; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "shown=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          echo "num=$NUM" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Versione $VERSION (numero $NUM), release: $RELEASE"
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Controlla che il tag coincida con la versione nel codice
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: |
-          $v = python -c "import re;print(re.search(r'APP_VERSION = \"(.+?)\"', open('windows/remnote.py', encoding='utf-8').read()).group(1))"
-          if ($env:GITHUB_REF_NAME -ne "v$v") { throw "Il tag $env:GITHUB_REF_NAME non coincide con la versione nel codice ($v)" }
-
       - name: Installa dipendenze
         run: python -m pip install -r windows/requirements.txt
+
+      - name: Informazioni di versione
+        run: python tools/buildinfo.py "${{ steps.ver.outputs.shown }}" "${{ steps.ver.outputs.num }}"
 
       - name: Crea reMNote.exe
         run: >
@@ -49,6 +72,7 @@ jobs:
           Start-Sleep -Seconds 10
           $h = Invoke-WebRequest http://localhost:8099/ -UseBasicParsing
           if ($h.Content -notmatch "reMNote" -or $h.Content -notmatch "mywebtvlive.com") { throw "pagina senza nome/crediti" }
+          if ($h.Content -notmatch "Versione ${{ steps.ver.outputs.shown }}") { throw "versione non mostrata nella pagina" }
           $s = Invoke-WebRequest http://localhost:8099/state -UseBasicParsing
           if ($s.Content -notmatch "demo_apertura") { throw "stato non valido: $($s.Content)" }
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
@@ -62,19 +86,38 @@ jobs:
           Stop-Process -Id $p.Id -Force
           Write-Host "Collaudo OK"
 
+      - name: Impronte SHA256
+        shell: bash
+        run: cd dist && sha256sum reMNote.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+
       - uses: actions/upload-artifact@v4
         with:
           name: reMNote-windows
-          path: dist/reMNote.exe
+          path: |
+            dist/reMNote.exe
+            dist/SHA256SUMS.txt
 
-      - name: Pubblica release (solo sui tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Pubblica release
+        if: steps.ver.outputs.release == 'true' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          name: reMNote ${{ github.ref_name }}
-          files: dist/reMNote.exe
-          generate_release_notes: true
+          tag_name: ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: reMNote ${{ steps.ver.outputs.num }}
+          files: |
+            dist/reMNote.exe
+            dist/SHA256SUMS.txt
           body: |
-            **reMNote** legge le note del relatore da PowerPoint in presentazione e le mostra in tempo reale su una pagina web della rete locale (anche da smartphone, con QR code).
+            ## Scarica
+            | File | Per |
+            |---|---|
+            | `reMNote.exe` | Windows 10/11 (PC dove gira PowerPoint) |
 
-            Scarica `reMNote.exe`, avvialo sul PC dove gira PowerPoint e inquadra il QR. Alla prima esecuzione Windows chiede l'accesso alla rete: consenti le *Reti private*.
+            **Come si usa**: doppio clic su `reMNote.exe`, poi inquadra il QR con lo smartphone (stessa rete Wi-Fi). Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti l'accesso alle **Reti private**.
+
+            reMNote legge le note del relatore da PowerPoint in presentazione e le mostra in tempo reale su una pagina web della rete locale, con barra stile, scelta della presentazione e comandi avanti/indietro dal telefono.
+
+            reMNote – Note del relatore  
+            Ideato e sviluppato da [www.andreabattaglioli.it](https://www.andreabattaglioli.it) · [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
+
+            Istruzioni complete nel [README](https://github.com/${{ github.repository }}#readme).
