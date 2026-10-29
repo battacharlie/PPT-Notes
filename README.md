@@ -1,1 +1,26 @@
 # PPT-Notes
+
+Legge le **note del relatore** da PowerPoint mentre la presentazione è in corso e le mostra, in tempo reale,
+su una pagina web raggiungibile da qualsiasi dispositivo della rete locale (smartphone, tablet, altri PC).
+
+## Funzioni (Windows)
+- Note sincronizzate con la slide corrente (aggiornamento ~10 volte al secondo).
+- QR code in console e su `http://localhost:8080/qr` per aprire le note dallo smartphone.
+- Più presentazioni aperte insieme: ogni dispositivo sceglie quale seguire.
+- Barra stile: font, dimensione, colore testo, colore sfondo, interlinea, spaziatura caratteri (salvata per dispositivo).
+- Comandi avanti / indietro / vai a slide dal telefono, con PIN opzionale (`--pin 1234`) o disattivabili (`--no-control`).
+
+## Uso
+Scarica `PPTNotes.exe` da **Actions → ultima esecuzione → Artifacts** (o dalle *Releases* per le versioni con tag `v*`),
+avvialo sul PC dove gira PowerPoint e inquadra il QR.
+Alla prima esecuzione Windows chiede l'accesso alla rete: consenti le *Reti private*.
+
+Opzioni: `--port 8080`, `--pin 1234`, `--no-control`, `--no-browser`, `--demo` (prova senza PowerPoint).
+
+## Sviluppo
+- Sorgente: `windows/ppt_notes.py` (Python + pywin32 + qrcode).
+- Build locale: `windows/crea_exe.bat`.
+- Build automatica: GitHub Actions (`.github/workflows/build-windows.yml`) con collaudo dell'exe in modalità demo.
+
+## Da fare
+- Mac (richiede lettura via AppleScript) e app Android (lettore QR, scelta presentazione, schermo sempre acceso, comandi).
