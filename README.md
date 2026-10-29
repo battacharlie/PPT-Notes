@@ -26,6 +26,7 @@ Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comun
 Alla prima esecuzione Windows chiede l'accesso alla rete: consenti le *Reti private*.
 
 Se un'anteprima di slide non compare, al suo posto la pagina scrive il motivo; gli errori sono anche nel file `reMNote.log`, accanto a `reMNote.exe`.
+Per capire un problema senza cercare file apri `http://localhost:8080/diagnostica` (o **Info → Diagnostica** nella pagina): mostra versione, dove viene scritto il registro, gli ultimi messaggi e prova le anteprime, con un pulsante **Copia tutto**.
 
 Opzioni: `--port 8080`, `--pin 1234`, `--no-control`, `--no-browser`, `--demo` (prova senza PowerPoint).
 

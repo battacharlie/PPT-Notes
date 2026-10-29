@@ -82,9 +82,30 @@ st, _, _, e8 = get("/slide/111/9.png"); check("fuori intervallo: messaggio chiar
 st, _, _, b3 = get("/slide/222/1.png"); check("altra presentazione funziona dopo l'errore", st == 200 and b"slide-1" in b3)
 files = [f for f in os.listdir(__import__("tempfile").gettempdir()) if f.startswith("reMNote_")]
 check("nessun file temporaneo rimasto", files == [])
+st, ct, _, dg = get("/diagnostica")
+check("pagina /diagnostica (200, html)", st == 200 and ct.startswith("text/html") and b"reMNote" in dg)
+check("diagnostica: versione, percorso del registro e messaggi recenti", m.APP_VERSION.encode() in dg and b"Registro previsto" in dg and b"Anteprima slide" in dg)
+st, ct, _, di = get("/diagnostica?solo=info")
+check("diagnostica: testo semplice aggiornabile", st == 200 and ct.startswith("text/plain") and b"Ultimi messaggi" in di)
+st, *_ = get("/pagina-che-non-esiste")
+check("indirizzo sconosciuto -> 404 e registrato", st == 404 and any("pagina-che-non-esiste" in l for l in m.LOG_LINES))
+st, *_ = get("/slide/%20/1.png")
+check("indirizzo anteprima non valido -> 404 e registrato", st == 404 and any("anteprima non riconosciuto" in l for l in m.LOG_LINES))
+check("registro scritto su file (accanto al programma o in temp)", m.LOG_FILE_USED[0] != "" and os.path.exists(m.LOG_FILE_USED[0]))
 m.cache_clear(); check("cache svuotabile", m.cache_get((111, 2)) is None and len(m.SLIDE_CACHE) == 0)
 for i in range(60): m.cache_put(("x", i), b"a")
 check("cache limitata a %d voci" % m.SLIDE_CACHE_MAX, len(m.SLIDE_CACHE) == m.SLIDE_CACHE_MAX)
+# ---- id finestra: HWND che arriva come metodo (caso reale visto su un PC) o assente
+class HwndMetodo:
+    def __init__(self, v, nome): self._v = v; self.Presentation = type("P", (), {"FullName": nome})()
+    def HWND(self): return self._v
+class HwndAssente:
+    def __init__(self, nome): self.Presentation = type("P", (), {"FullName": nome})()
+a, b = HwndMetodo(1182454, "C:\\x\\1.pptx"), HwndMetodo(99871, "C:\\x\\2.pptx")
+check("id con HWND come metodo = numero", m.win_id(a, 1) == "1182454" and m.win_id(b, 2) == "99871")
+c, d = HwndAssente("C:\\x\\1.pptx"), HwndAssente("C:\\x\\2.pptx")
+check("id senza HWND: valido e diverso per presentazione", m.win_id(c, 1) != m.win_id(d, 2) and all(m.SLIDE_RE.match("/slide/%s/1.png" % m.win_id(w, i)) for i, w in ((1, c), (2, d))))
+check("id sempre accettato dall'indirizzo anteprima", all(m.SLIDE_RE.match("/slide/%s/1.png" % m.win_id(w, 1)) for w in (a, b, c, d, object())))
 stop = True
 
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)
@@ -97,6 +118,11 @@ if node:
     r = subprocess.run([node, os.path.join(HERE, "test_pagina.js"), js], capture_output=True, text=True)
     print(r.stdout + r.stderr)
     check("pagina: test del comportamento dei pulsanti", r.returncode == 0)
+    dj = os.path.join(tempfile.gettempdir(), "remnote_diagnostica.js")
+    open(dj, "w", encoding="utf-8").write(re.search(r"<script>(.*)</script>", m.DIAG_PAGE, re.S).group(1))
+    r2 = subprocess.run([node, "--check", dj], capture_output=True, text=True)
+    check("pagina diagnostica: JavaScript valido", r2.returncode == 0)
+    if r2.returncode: print(r2.stderr)
 else:
     print("Node.js non trovato: test della pagina saltato")
 print("TUTTO OK" if ok else "CI SONO ERRORI"); sys.exit(0 if ok else 1)

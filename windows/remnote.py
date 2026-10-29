@@ -27,8 +27,10 @@ import sys
 import tempfile
 import threading
 import time
+import zlib
 import webbrowser
-from collections import OrderedDict
+from collections import OrderedDict, deque
+from html import escape as html_escape
 from xml.sax.saxutils import escape
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
@@ -110,10 +112,25 @@ def notes_of(slide):
 
 
 def win_id(win, i):
+    """Id stabile della finestra di presentazione, fatto solo di cifre/lettere.
+    Con alcune installazioni di PowerPoint/pywin32 HWND arriva come metodo e non come
+    numero: va chiamato, altrimenti l'id diventa "<bound method ...>" (uguale per tutte)."""
     try:
-        return str(win.HWND)
+        h = win.HWND
+        if callable(h):
+            h = h()
+        h = int(h)
+        if h:
+            return str(abs(h))
     except Exception:
-        return "w%d" % i
+        pass
+    try:
+        name = str(win.Presentation.FullName)
+    except Exception:
+        name = ""
+    if name:
+        return "p%08x" % (zlib.crc32(name.encode("utf-8", "replace")) & 0xFFFFFFFF)
+    return "w%d" % i
 
 
 def read_shows(app):
@@ -165,6 +182,8 @@ def run_command(app, cmd):
 
 
 LOG_SEEN = set()
+LOG_LINES = deque(maxlen=60)   # ultimi messaggi, mostrati anche nella pagina /diagnostica
+LOG_FILE_USED = [""]
 
 
 def log_path():
@@ -172,20 +191,97 @@ def log_path():
     return os.path.join(base, "reMNote.log")
 
 
+def log_paths():
+    """Dove prova a scrivere il registro: accanto all'exe, poi nella cartella temporanea."""
+    return [log_path(), os.path.join(tempfile.gettempdir(), "reMNote.log")]
+
+
 def log(msg):
-    """Scrive un messaggio in console e nel file reMNote.log (ogni messaggio una volta sola)."""
+    """Scrive un messaggio in console, in memoria e nel file reMNote.log (ogni messaggio una volta sola)."""
     if msg in LOG_SEEN or len(LOG_SEEN) > 50:
         return
     LOG_SEEN.add(msg)
+    line = "%s %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg)
+    LOG_LINES.append(line)
     try:
         print(" [registro] " + msg)
     except Exception:
         pass
-    try:
-        with open(log_path(), "a", encoding="utf-8") as f:
-            f.write("%s %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg))
-    except Exception:
-        pass
+    for pth in log_paths():
+        try:
+            with open(pth, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            LOG_FILE_USED[0] = pth
+            break
+        except Exception:
+            continue
+
+
+def diagnostica_info():
+    """Testo con le informazioni utili per capire un problema, senza cercare file."""
+    lines = [
+        "reMNote %s" % APP_VERSION,
+        "Programma: %s%s" % (sys.executable, "  (exe)" if getattr(sys, "frozen", False) else "  (da sorgente)"),
+        "Indirizzo: %s" % BASE_URL,
+        "Registro previsto: %s" % log_path(),
+        "Registro scritto in: %s" % (LOG_FILE_USED[0] or "(non ancora scritto o scrittura impossibile)"),
+        "Modalita demo: %s" % ("si" if DEMO_MODE else "no"),
+        "",
+        "Ultimi messaggi del registro:",
+    ] + (list(LOG_LINES) or ["(nessuno)"])
+    return "\n".join(lines)
+
+
+def diagnostica_page():
+    """Pagina /diagnostica."""
+    return DIAG_PAGE.replace("__INFO__", html_escape(diagnostica_info()))
+
+
+DIAG_PAGE = r"""<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>reMNote - diagnostica</title>
+<link rel="icon" type="image/png" href="/static/remnote-64.png">
+<style>body{font:14px Arial,sans-serif;margin:16px;background:#fff;color:#111}
+pre{background:#f3f3f3;padding:10px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
+button{font:15px Arial,sans-serif;padding:8px 14px;margin:4px 6px 4px 0;cursor:pointer}</style></head>
+<body><h2>reMNote - diagnostica</h2>
+<pre id="info">__INFO__</pre>
+<p><button id="prova">Prova le anteprime ora</button><button id="copia">Copia tutto</button></p>
+<pre id="out">Premi "Prova le anteprime ora" con una presentazione in corso.</pre>
+<script>
+async function prova() {
+  const out = document.getElementById("out"); out.textContent = "Prova in corso…";
+  const L = [];
+  try {
+    const st = await (await fetch("/state")).json();
+    L.push("Presentazioni in corso: " + st.shows.length);
+    for (const s of st.shows) {
+      L.push("- id=" + s.id + "  titolo=" + s.title + "  slide=" + s.index + "/" + s.total);
+      for (const n of [s.index, s.index + 1]) {
+        if (n > s.total) continue;
+        const url = "/slide/" + encodeURIComponent(s.id) + "/" + n + ".png";
+        const t0 = performance.now();
+        const r = await fetch(url);
+        const ct = r.headers.get("Content-Type") || "";
+        const body = ct.indexOf("image") === 0 ? (await r.blob()).size + " byte" : await r.text();
+        L.push("    " + url + "  ->  " + r.status + "  " + ct + "  " + body + "  (" + Math.round(performance.now() - t0) + " ms)");
+      }
+    }
+    if (!st.shows.length) L.push("Nessuna presentazione in corso: avvia una presentazione in PowerPoint e riprova.");
+  } catch (e) { L.push("Errore: " + e); }
+  out.textContent = L.join("\n");
+  fetch("/diagnostica?solo=info").then(r => r.text()).then(t => { document.getElementById("info").textContent = t; }).catch(() => {});
+}
+document.getElementById("prova").onclick = prova;
+document.getElementById("copia").onclick = async () => {
+  const txt = document.getElementById("info").textContent + "\n\n" + document.getElementById("out").textContent;
+  try { await navigator.clipboard.writeText(txt); alert("Copiato: incollalo nella chat."); }
+  catch (e) {
+    const r = document.createRange(); r.selectNodeContents(document.body);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    alert("Selezionato tutto: premi Ctrl+C e incolla nella chat.");
+  }
+};
+</script></body></html>"""
 
 
 def cache_get(key):
@@ -549,6 +645,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/slide/"):
             m = SLIDE_RE.match(path)
             if not m:
+                log("Indirizzo anteprima non riconosciuto (404): %s" % self.path[:150])
                 self._send(404, "text/plain; charset=utf-8", b"Non trovato")
                 return
             self._slide(m.group(1), int(m.group(2)))
@@ -564,6 +661,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain; charset=utf-8", b"Non trovato")
                 return
             self._send(200, ASSET_FILES[name], data)
+        elif path == "/diagnostica":
+            if "solo=info" in self.path:
+                self._send(200, "text/plain; charset=utf-8", diagnostica_info().encode("utf-8"))
+            else:
+                self._send(200, "text/html; charset=utf-8", diagnostica_page().encode("utf-8"))
         elif path == "/qr.svg":
             self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
         elif path == "/qr":
@@ -593,6 +695,7 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
         else:
+            log("Indirizzo non riconosciuto (404): %s" % self.path[:150])
             self._send(404, "text/plain; charset=utf-8", b"Non trovato")
 
 
@@ -748,6 +851,7 @@ PAGE = r"""<!DOCTYPE html>
     <img class="logo" src="/static/remnote-192.png" alt="reMNote">
     <div class="ver">Versione __VERSION__</div>
     <div>__CREDITS__</div>
+    <div style="margin-top:8px;font-size:13px"><a href="/diagnostica" target="_blank">Diagnostica</a></div>
     <div style="margin-top:12px;color:#888;font-size:12px">Tocca per chiudere</div>
   </div>
 </div>
@@ -1035,11 +1139,13 @@ def main():
     print(" Alla prima esecuzione Windows chiede di consentire l'accesso alla rete:")
     print(" scegli 'Reti private' (e 'Reti pubbliche' se il Wi-Fi e' visto come pubblico).")
     print(" Registro errori: " + log_path())
+    print(" Diagnostica: http://localhost:%d/diagnostica" % port)
     print(" Chiudi questa finestra per fermare il programma.")
     print()
     print(" reMNote - Ideato e sviluppato da www.andreabattaglioli.it")
     print(" Powered by www.mywebtvlive.com - Made in Bolognina")
 
+    log("Avvio %s %s - indirizzo %s" % (APP_NAME, APP_VERSION, BASE_URL))
     if not args.no_browser:
         try:
             webbrowser.open("http://localhost:%d/qr" % port)
