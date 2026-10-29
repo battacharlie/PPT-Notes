@@ -95,6 +95,17 @@ check("registro scritto su file (accanto al programma o in temp)", m.LOG_FILE_US
 m.cache_clear(); check("cache svuotabile", m.cache_get((111, 2)) is None and len(m.SLIDE_CACHE) == 0)
 for i in range(60): m.cache_put(("x", i), b"a")
 check("cache limitata a %d voci" % m.SLIDE_CACHE_MAX, len(m.SLIDE_CACHE) == m.SLIDE_CACHE_MAX)
+# ---- id finestra: HWND che arriva come metodo (caso reale visto su un PC) o assente
+class HwndMetodo:
+    def __init__(self, v, nome): self._v = v; self.Presentation = type("P", (), {"FullName": nome})()
+    def HWND(self): return self._v
+class HwndAssente:
+    def __init__(self, nome): self.Presentation = type("P", (), {"FullName": nome})()
+a, b = HwndMetodo(1182454, "C:\\x\\1.pptx"), HwndMetodo(99871, "C:\\x\\2.pptx")
+check("id con HWND come metodo = numero", m.win_id(a, 1) == "1182454" and m.win_id(b, 2) == "99871")
+c, d = HwndAssente("C:\\x\\1.pptx"), HwndAssente("C:\\x\\2.pptx")
+check("id senza HWND: valido e diverso per presentazione", m.win_id(c, 1) != m.win_id(d, 2) and all(m.SLIDE_RE.match("/slide/%s/1.png" % m.win_id(w, i)) for i, w in ((1, c), (2, d))))
+check("id sempre accettato dall'indirizzo anteprima", all(m.SLIDE_RE.match("/slide/%s/1.png" % m.win_id(w, 1)) for w in (a, b, c, d, object())))
 stop = True
 
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)

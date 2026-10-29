@@ -27,6 +27,7 @@ import sys
 import tempfile
 import threading
 import time
+import zlib
 import webbrowser
 from collections import OrderedDict, deque
 from html import escape as html_escape
@@ -111,10 +112,25 @@ def notes_of(slide):
 
 
 def win_id(win, i):
+    """Id stabile della finestra di presentazione, fatto solo di cifre/lettere.
+    Con alcune installazioni di PowerPoint/pywin32 HWND arriva come metodo e non come
+    numero: va chiamato, altrimenti l'id diventa "<bound method ...>" (uguale per tutte)."""
     try:
-        return str(win.HWND)
+        h = win.HWND
+        if callable(h):
+            h = h()
+        h = int(h)
+        if h:
+            return str(abs(h))
     except Exception:
-        return "w%d" % i
+        pass
+    try:
+        name = str(win.Presentation.FullName)
+    except Exception:
+        name = ""
+    if name:
+        return "p%08x" % (zlib.crc32(name.encode("utf-8", "replace")) & 0xFFFFFFFF)
+    return "w%d" % i
 
 
 def read_shows(app):
