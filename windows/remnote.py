@@ -21,11 +21,15 @@ import argparse
 import json
 import os
 import queue
+import re
 import socket
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
+from collections import OrderedDict
+from xml.sax.saxutils import escape
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 APP_NAME = "reMNote"
@@ -65,6 +69,12 @@ STATE = {"pin_required": False, "control": True, "shows": []}
 VERSION = 0
 COND = threading.Condition()
 CMDQ = queue.Queue()
+IMGQ = queue.Queue()          # richieste di anteprima slide (eseguite dal thread che usa COM)
+SLIDE_CACHE = OrderedDict()   # (id presentazione, numero slide) -> immagine PNG
+SLIDE_LOCK = threading.Lock()
+SLIDE_CACHE_MAX = 40
+SLIDE_RE = re.compile(r"^/slide/([A-Za-z0-9_-]{1,32})/(\d{1,5})\.png$")
+DEMO_MODE = False
 
 
 def set_state(shows):
@@ -154,6 +164,86 @@ def run_command(app, cmd):
     return False
 
 
+def cache_get(key):
+    with SLIDE_LOCK:
+        v = SLIDE_CACHE.get(key)
+        if v is not None:
+            SLIDE_CACHE.move_to_end(key)
+        return v
+
+
+def cache_put(key, data):
+    with SLIDE_LOCK:
+        SLIDE_CACHE[key] = data
+        SLIDE_CACHE.move_to_end(key)
+        while len(SLIDE_CACHE) > SLIDE_CACHE_MAX:
+            SLIDE_CACHE.popitem(last=False)
+
+
+def cache_clear():
+    with SLIDE_LOCK:
+        SLIDE_CACHE.clear()
+
+
+def export_slide(app, job):
+    """Esporta una slide in PNG (va chiamata solo dal thread che usa COM)."""
+    key = (job["id"], job["index"])
+    data = cache_get(key)
+    if data is None:
+        for i in range(1, int(app.SlideShowWindows.Count) + 1):
+            win = app.SlideShowWindows(i)
+            if win_id(win, i) != job["id"]:
+                continue
+            pres = win.Presentation
+            if not 1 <= job["index"] <= int(pres.Slides.Count):
+                break
+            w = 960
+            try:
+                h = int(round(w * float(pres.PageSetup.SlideHeight) / float(pres.PageSetup.SlideWidth)))
+            except Exception:
+                h = 540
+            path = os.path.join(tempfile.gettempdir(), "reMNote_%d_%d.png" % (os.getpid(), job["index"]))
+            try:
+                pres.Slides(job["index"]).Export(path, "PNG", w, h)
+                with open(path, "rb") as f:
+                    data = f.read()
+            finally:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+            break
+        if data:
+            cache_put(key, data)
+    job["result"] = data
+    job["event"].set()
+
+
+def process_image_jobs(app):
+    while True:
+        try:
+            job = IMGQ.get_nowait()
+        except queue.Empty:
+            break
+        if time.time() - job["t"] > 8.0:
+            job["event"].set()   # nessuno la sta piu' aspettando
+            continue
+        try:
+            export_slide(app, job)
+        except Exception:
+            job["result"] = None
+            job["event"].set()
+
+
+def fail_image_jobs():
+    while True:
+        try:
+            job = IMGQ.get_nowait()
+        except queue.Empty:
+            break
+        job["event"].set()
+
+
 def poll_powerpoint(interval):
     import pythoncom
     import win32com.client
@@ -176,11 +266,15 @@ def poll_powerpoint(interval):
                     run_command(app, cmd)
                 except Exception:
                     pass
+            process_image_jobs(app)
             if int(app.SlideShowWindows.Count) > 0:
                 shows = read_shows(app)
+            else:
+                cache_clear()
         except Exception:
             # PowerPoint chiuso o COM momentaneamente occupato: ricollega al giro dopo
             app = None
+            fail_image_jobs()
             while not CMDQ.empty():
                 try:
                     CMDQ.get_nowait()
@@ -201,6 +295,23 @@ DEMO_SHOWS = [
         "Case history: tre punti chiave.",
         "Conclusioni."]},
 ]
+
+
+def demo_slide(sid, index):
+    """Anteprima finta (SVG) per la modalita' demo."""
+    for d in DEMO_SHOWS:
+        if d["id"] == sid and 1 <= index <= len(d["notes"]):
+            line = d["notes"][index - 1].split("\n")[0][:70]
+            svg = (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">'
+                '<rect width="960" height="540" fill="#14434d"/>'
+                '<text x="480" y="150" fill="#f26a21" font-family="Arial" font-size="36" text-anchor="middle">%s</text>'
+                '<text x="480" y="300" fill="#ffffff" font-family="Arial" font-size="96" font-weight="700" '
+                'text-anchor="middle">Slide %d / %d</text>'
+                '<text x="480" y="420" fill="#cfe" font-family="Arial" font-size="30" text-anchor="middle">%s</text>'
+                '</svg>' % (escape(d["title"]), index, len(d["notes"]), escape(line)))
+            return svg.encode("utf-8"), "image/svg+xml"
+    return None, ""
 
 
 def poll_demo(_interval):
@@ -319,6 +430,28 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, "application/json; charset=utf-8", json.dumps(obj).encode("utf-8"))
 
+    def _slide(self, sid, index):
+        ctype = "image/png"
+        if DEMO_MODE:
+            data, ctype = demo_slide(sid, index)
+        else:
+            data = cache_get((sid, index))
+            if data is None:
+                job = {"id": sid, "index": index, "t": time.time(),
+                       "event": threading.Event(), "result": None}
+                IMGQ.put(job)
+                job["event"].wait(6)
+                data = job["result"]
+        if not data:
+            self._send(404, "text/plain; charset=utf-8", b"Anteprima non disponibile")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, max-age=300")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_POST(self):
         path = self.path.split("?")[0]
         try:
@@ -359,6 +492,12 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8",
                        PAGE.replace("__CREDITS__", CREDITS_HTML).replace("__VERSION__", APP_VERSION).encode("utf-8"))
+        elif path.startswith("/slide/"):
+            m = SLIDE_RE.match(path)
+            if not m:
+                self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+                return
+            self._slide(m.group(1), int(m.group(2)))
         elif path.startswith("/static/") or path == "/favicon.ico":
             name = "remnote.ico" if path == "/favicon.ico" else path[len("/static/"):]
             if name not in ASSET_FILES:
@@ -475,6 +614,19 @@ PAGE = r"""<!DOCTYPE html>
   #infobox .ver { color:#666; font-size:13px; margin-bottom:12px; }
   #infobox a { color:#14434d; }
   #infobox .mwtl img { vertical-align:middle; margin-right:4px; }
+  .grp { display:contents; }
+  body.nostyle .grp { display:none; }
+  #bar button.tg.on { background:#2b8392; color:#fff; border-color:#8fd3df; }
+  #slides { display:none; gap:10px; justify-content:center; padding:8px 10px; background:#111;
+            border-bottom:1px solid #444; }
+  body.showcur #slides, body.shownext #slides { display:flex; }
+  #slides figure { display:none; margin:0; flex:1 1 0; max-width:460px; text-align:center; }
+  body.showcur #figcur, body.shownext #fignext { display:block; }
+  #slides figcaption { font:12px Arial, sans-serif; color:#aaa; margin-bottom:3px; }
+  #slides img { display:block; width:100%; max-height:30vh; object-fit:contain; background:#000;
+                border:1px solid #555; }
+  #slides .ph { display:none; aspect-ratio:16/9; max-height:30vh; width:100%; align-items:center;
+                justify-content:center; border:1px dashed #555; color:#999; font:13px Arial, sans-serif; }
   body.hidebar #bar { display:none; }
   body.noctl #ctl { display:none; }
   #showbar { position:fixed; right:8px; top:8px; display:none; opacity:.4; }
@@ -486,6 +638,7 @@ PAGE = r"""<!DOCTYPE html>
   <label id="showlbl">Presentazione
     <select id="show"></select>
   </label>
+  <span class="grp">
   <label>Font
     <select id="font">
       <option value="Arial, sans-serif">Arial</option>
@@ -509,12 +662,20 @@ PAGE = r"""<!DOCTYPE html>
   <label>Interlinea <input type="range" id="lh" min="0.9" max="3" step="0.05"> <span id="lhv"></span></label>
   <label>Spaziatura <input type="range" id="ls" min="-2" max="20" step="0.5"> <span id="lsv"></span></label>
   <button id="reset">Ripristina</button>
+  </span>
   <button id="full">Schermo intero</button>
-  <button id="ctlb">Comandi</button>
+  <button id="styleb" class="tg" title="Mostra/nascondi i comandi del testo">Stile testo</button>
+  <button id="ctlb" class="tg" title="Mostra/nascondi i pulsanti per avanzare le slide">Comandi</button>
+  <button id="curb" class="tg" title="Mostra/nascondi la slide in onda">Slide in onda</button>
+  <button id="nextb" class="tg" title="Mostra/nascondi la slide successiva">Slide successiva</button>
   <button id="qrb">QR</button>
   <button id="infob">Info</button>
   <button id="hide">Nascondi barra</button>
   <div id="info"><span id="pos"></span><span id="dot" title="Presentazione"></span></div>
+</div>
+<div id="slides">
+  <figure id="figcur"><figcaption>In onda</figcaption><img id="imgcur" alt="Slide in onda"><div class="ph" id="phcur"></div></figure>
+  <figure id="fignext"><figcaption>Successiva</figcaption><img id="imgnext" alt="Slide successiva"><div class="ph" id="phnext"></div></figure>
 </div>
 <div id="main"><div id="notes" class="wait">In attesa della presentazione…</div></div>
 <div id="ctl">
@@ -613,6 +774,7 @@ function render() {
     notes.classList.add("wait");
     $("pos").textContent = ""; $("ctlpos").textContent = "–";
     lastKey = null;
+    updateSlides(null);
     return;
   }
   notes.classList.remove("wait");
@@ -622,7 +784,31 @@ function render() {
   notes.textContent = cur.notes && cur.notes.trim() ? cur.notes : "(nessuna nota per questa slide)";
   const k = cur.id + "#" + cur.index;
   if (k !== lastKey) { $("main").scrollTop = 0; lastKey = k; }
+  updateSlides(cur);
 }
+
+/* ---- anteprima slide in onda e successiva ---- */
+function setSlide(img, ph, on, id, index, title, emptyText) {
+  if (!on) return;
+  if (!id || !index) { img.style.display = "none"; ph.textContent = emptyText; ph.style.display = "flex"; return; }
+  const src = "/slide/" + encodeURIComponent(id) + "/" + index + ".png?v=" + encodeURIComponent(title);
+  if (img.getAttribute("data-src") !== src) { img.setAttribute("data-src", src); img.src = src; }
+  ph.style.display = "none"; img.style.display = "block";
+}
+function updateSlides(cur) {
+  const wait = "In attesa della presentazione…";
+  setSlide($("imgcur"), $("phcur"), curOn, cur ? cur.id : "", cur ? cur.index : 0, cur ? cur.title : "", wait);
+  const hasNext = !!cur && cur.index < cur.total;
+  setSlide($("imgnext"), $("phnext"), nextOn, hasNext ? cur.id : "", hasNext ? cur.index + 1 : 0,
+           cur ? cur.title : "", cur ? "Ultima slide" : wait);
+}
+["imgcur", "imgnext"].forEach(id => {
+  $(id).onerror = () => {
+    const ph = $(id === "imgcur" ? "phcur" : "phnext");
+    $(id).style.display = "none"; $(id).removeAttribute("data-src");
+    ph.textContent = "Anteprima non disponibile"; ph.style.display = "flex";
+  };
+});
 
 /* ---- comandi ---- */
 let pin = lsGet("pptPin", "");
@@ -661,14 +847,28 @@ document.addEventListener("keydown", e => {
   if (["ArrowRight","ArrowDown","PageDown"," "].includes(e.key)) { e.preventDefault(); sendCmd("next"); }
   else if (["ArrowLeft","ArrowUp","PageUp"].includes(e.key)) { e.preventDefault(); sendCmd("prev"); }
 });
+/* ---- cosa mostrare: ogni dispositivo ricorda le sue scelte ---- */
+let styleOn = lsGet("pptStyle", "1") === "1";
 let ctlOn = lsGet("pptCtl", "1") === "1";
+let curOn = lsGet("pptCur", "0") === "1";
+let nextOn = lsGet("pptNext", "0") === "1";
 function applyCtl() {
   const allowed = st.control !== false;
-  document.body.classList.toggle("noctl", !ctlOn || !allowed);
+  const b = document.body.classList;
+  b.toggle("nostyle", !styleOn);
+  b.toggle("noctl", !ctlOn || !allowed);
+  b.toggle("showcur", curOn);
+  b.toggle("shownext", nextOn);
   $("ctlb").style.display = allowed ? "" : "none";
-  $("ctlb").textContent = ctlOn ? "Nascondi comandi" : "Comandi";
+  $("styleb").classList.toggle("on", styleOn);
+  $("ctlb").classList.toggle("on", ctlOn);
+  $("curb").classList.toggle("on", curOn);
+  $("nextb").classList.toggle("on", nextOn);
 }
+$("styleb").onclick = () => { styleOn = !styleOn; lsSet("pptStyle", styleOn ? "1" : "0"); applyCtl(); };
 $("ctlb").onclick = () => { ctlOn = !ctlOn; lsSet("pptCtl", ctlOn ? "1" : "0"); applyCtl(); };
+$("curb").onclick = () => { curOn = !curOn; lsSet("pptCur", curOn ? "1" : "0"); applyCtl(); render(); };
+$("nextb").onclick = () => { nextOn = !nextOn; lsSet("pptNext", nextOn ? "1" : "0"); applyCtl(); render(); };
 
 /* ---- schermo sempre acceso (serve HTTPS o app; sul sito http della LAN molti browser lo negano) ---- */
 let wl = null;
@@ -698,7 +898,7 @@ connect();
 
 
 def main():
-    global BASE_URL, PIN, CONTROL
+    global BASE_URL, PIN, CONTROL, DEMO_MODE
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
@@ -713,6 +913,7 @@ def main():
     args = ap.parse_args()
     PIN = str(args.pin or "")
     CONTROL = not args.no_control
+    DEMO_MODE = bool(args.demo)
 
     if not args.demo:
         try:

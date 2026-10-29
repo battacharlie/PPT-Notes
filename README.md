@@ -12,6 +12,8 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 - Più presentazioni aperte insieme: ogni dispositivo sceglie quale seguire.
 - Barra stile: font, dimensione, colore testo, colore sfondo, interlinea, spaziatura caratteri (salvata per dispositivo).
 - Comandi avanti / indietro / vai a slide dal telefono, con PIN opzionale (`--pin 1234`) o disattivabili (`--no-control`).
+- Pulsanti per mostrare/nascondere: **Stile testo** (comandi del testo), **Comandi** (avanzamento slide),
+  **Slide in onda** e **Slide successiva** (anteprima delle due slide sopra le note). Ogni dispositivo ricorda le sue scelte.
 
 ## Uso
 **Versioni ufficiali**: nella pagina del progetto su GitHub, sezione **Releases** (a destra), scarica `reMNote.exe`.
@@ -28,6 +30,7 @@ Opzioni: `--port 8080`, `--pin 1234`, `--no-control`, `--no-browser`, `--demo` (
 ## Sviluppo
 - Sorgente: `windows/remnote.py` (Python + pywin32 + qrcode). Icone in `windows/assets/` (generate da `tools/make_icons.py` a partire da `remnote-logo.png`).
 - Build locale: `windows/crea_remnote_exe.bat`.
+- Test (senza PowerPoint): `python tools/test_remnote.py` (anteprime slide con PowerPoint simulato e comportamento della pagina, richiede Node.js).
 - Build automatica: GitHub Actions (`.github/workflows/build-windows.yml`, "Compila") a ogni push, con collaudo dell'exe in modalità demo.
 
 **Pubblicare una release**: scrivi il nuovo numero nel file `VERSION` (es. `1.1`) e porta le modifiche su `main`

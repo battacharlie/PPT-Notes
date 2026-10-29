@@ -50,6 +50,9 @@ jobs:
       - name: Installa dipendenze
         run: python -m pip install -r windows/requirements.txt
 
+      - name: Test (anteprime slide e pagina)
+        run: python tools/test_remnote.py
+
       - name: Informazioni di versione
         run: python tools/buildinfo.py "${{ steps.ver.outputs.shown }}" "${{ steps.ver.outputs.num }}"
 
@@ -77,6 +80,9 @@ jobs:
           if ($s.Content -notmatch "demo_apertura") { throw "stato non valido: $($s.Content)" }
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
           if ($q.Content -notmatch "<svg") { throw "QR non valido" }
+          $sl = Invoke-WebRequest http://localhost:8099/slide/d1/1.png -UseBasicParsing
+          if ($sl.StatusCode -ne 200 -or $sl.Content -notmatch "demo_apertura") { throw "anteprima slide non valida" }
+          if ($h.Content -notmatch "Slide successiva") { throw "pulsante Slide successiva mancante" }
           foreach ($f in "static/mwtl-logo.png","static/remnote-192.png","favicon.ico") {
             $r = Invoke-WebRequest "http://localhost:8099/$f" -UseBasicParsing
             if ($r.StatusCode -ne 200 -or $r.RawContentLength -lt 500) { throw "asset mancante: $f" }
@@ -115,7 +121,7 @@ jobs:
 
             **Come si usa**: doppio clic su `reMNote.exe`, poi inquadra il QR con lo smartphone (stessa rete Wi-Fi). Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti l'accesso alle **Reti private**.
 
-            reMNote legge le note del relatore da PowerPoint in presentazione e le mostra in tempo reale su una pagina web della rete locale, con barra stile, scelta della presentazione e comandi avanti/indietro dal telefono.
+            reMNote legge le note del relatore da PowerPoint in presentazione e le mostra in tempo reale su una pagina web della rete locale, con barra stile, scelta della presentazione, anteprima della slide in onda e di quella successiva e comandi avanti/indietro dal telefono.
 
             reMNote – Note del relatore  
             Ideato e sviluppato da [www.andreabattaglioli.it](https://www.andreabattaglioli.it) · [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
