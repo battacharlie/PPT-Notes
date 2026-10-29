@@ -51,47 +51,47 @@ jobs:
         run: python -m pip install -r windows/requirements.txt
 
       - name: Test (anteprime slide e pagina)
-        run: python tools/test_remnote.py
+        run: python tools/test_deckwhisperer.py
 
       - name: Informazioni di versione
         run: python tools/buildinfo.py "${{ steps.ver.outputs.shown }}" "${{ steps.ver.outputs.num }}"
 
-      - name: Crea reMNote.exe
+      - name: Crea DeckWhisperer.exe
         run: >
           python -m PyInstaller --onefile --console --noconfirm --clean
-          --name reMNote
-          --icon windows/assets/remnote.ico
+          --name DeckWhisperer
+          --icon windows/assets/deckwhisperer.ico
           --add-data "windows/assets;assets"
           --version-file windows/version_info.txt
           --hidden-import win32com.client --hidden-import pythoncom
-          windows/remnote.py
+          windows/deckwhisperer.py
 
       - name: Collaudo exe (modalità demo, senza PowerPoint)
         shell: pwsh
         run: |
-          $vi = (Get-Item dist\reMNote.exe).VersionInfo
-          if ($vi.ProductName -ne "reMNote") { throw "Info versione exe errate: $($vi.ProductName)" }
-          $p = Start-Process -FilePath dist\reMNote.exe -ArgumentList "--demo","--no-browser","--port","8099" -PassThru
+          $vi = (Get-Item dist\DeckWhisperer.exe).VersionInfo
+          if ($vi.ProductName -ne "DeckWhisperer") { throw "Info versione exe errate: $($vi.ProductName)" }
+          $p = Start-Process -FilePath dist\DeckWhisperer.exe -ArgumentList "--demo","--no-browser","--port","8099" -PassThru
           Start-Sleep -Seconds 10
           $h = Invoke-WebRequest http://localhost:8099/ -UseBasicParsing
-          if ($h.Content -notmatch "reMNote" -or $h.Content -notmatch "mywebtvlive.com") { throw "pagina senza nome/crediti" }
+          if ($h.Content -notmatch "DeckWhisperer" -or $h.Content -notmatch "mywebtvlive.com") { throw "pagina senza nome/crediti" }
           if ($h.Content -notmatch "Versione ${{ steps.ver.outputs.shown }}") { throw "versione non mostrata nella pagina" }
           $s = Invoke-WebRequest http://localhost:8099/state -UseBasicParsing
           if ($s.Content -notmatch "demo_apertura") { throw "stato non valido: $($s.Content)" }
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
           if ($q.Content -notmatch "<svg") { throw "QR non valido" }
           $d = Invoke-WebRequest http://localhost:8099/diagnostica -UseBasicParsing
-          if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio reMNote") { throw "pagina diagnostica non valida" }
-          if (-not (Test-Path dist\reMNote.log)) { throw "reMNote.log non creato accanto all'exe" }
+          if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio DeckWhisperer") { throw "pagina diagnostica non valida" }
+          if (-not (Test-Path dist\DeckWhisperer.log)) { throw "DeckWhisperer.log non creato accanto all'exe" }
           $g = Invoke-WebRequest http://localhost:8099/start -UseBasicParsing
-          if ($g.Content -notmatch "Cosa vuoi far vedere" -or $g.Content -notmatch "/qr.svg") { throw "pagina di avvio non valida" }
+          if ($g.Content -notmatch "Cosa vuoi far vedere" -or $g.Content -notmatch "/qr.svg" -or $g.Content -notmatch "u_full" -or $g.Content -notmatch "Remote presenter notes") { throw "pagina di avvio non valida" }
           $j = Invoke-WebRequest http://localhost:8099/settings.json -UseBasicParsing
           if ($j.Content -notmatch '"ui"') { throw "impostazioni non valide: $($j.Content)" }
           if ($s.Content -notmatch '"ui"') { throw "stato senza scelte per i telefoni" }
           $sl = Invoke-WebRequest http://localhost:8099/slide/d1/1.png -UseBasicParsing
           if ($sl.StatusCode -ne 200 -or $sl.Content -notmatch "demo_apertura") { throw "anteprima slide non valida" }
           if ($h.Content -notmatch "Slide successiva") { throw "pulsante Slide successiva mancante" }
-          foreach ($f in "static/mwtl-logo.png","static/remnote-192.png","favicon.ico") {
+          foreach ($f in "static/mwtl-logo.png","static/deckwhisperer-192.png","favicon.ico") {
             $r = Invoke-WebRequest "http://localhost:8099/$f" -UseBasicParsing
             if ($r.StatusCode -ne 200 -or $r.RawContentLength -lt 500) { throw "asset mancante: $f" }
           }
@@ -102,13 +102,13 @@ jobs:
 
       - name: Impronte SHA256
         shell: bash
-        run: cd dist && sha256sum reMNote.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+        run: cd dist && sha256sum DeckWhisperer.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: reMNote-windows
+          name: DeckWhisperer-windows
           path: |
-            dist/reMNote.exe
+            dist/DeckWhisperer.exe
             dist/SHA256SUMS.txt
 
       - name: Pubblica release
@@ -117,21 +117,29 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: reMNote ${{ steps.ver.outputs.num }}
+          name: DeckWhisperer ${{ steps.ver.outputs.num }}
           files: |
-            dist/reMNote.exe
+            dist/DeckWhisperer.exe
             dist/SHA256SUMS.txt
+            docs/INSTRUCTIONS.md
+            docs/ISTRUZIONI.md
           body: |
-            ## Scarica
-            | File | Per |
+            ## DeckWhisperer – Remote presenter notes & presentation control
+
+            ### Download
+            | File | For / Per |
             |---|---|
-            | `reMNote.exe` | Windows 10/11 (PC dove gira PowerPoint) |
+            | `DeckWhisperer.exe` | Windows 10/11 + PowerPoint |
+            | `INSTRUCTIONS.md` | Instructions in English |
+            | `ISTRUZIONI.md` | Istruzioni in italiano |
 
-            **Come si usa**: doppio clic su `reMNote.exe`, poi inquadra il QR con lo smartphone (stessa rete Wi-Fi). Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti l'accesso alle **Reti private**.
+            ### 🇬🇧 English
+            **How to use**: double-click `DeckWhisperer.exe`; the start page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi), pick what the phone should show (text style, slide controls, current/next slide, control bar, full screen) and start your slide show in PowerPoint. If Windows says "Windows protected your PC": *More info → Run anyway*. On first start allow **Private networks**.
+            Full instructions: [INSTRUCTIONS.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTRUCTIONS.md).
 
-            reMNote legge le note del relatore da PowerPoint in presentazione e le mostra in tempo reale su una pagina web della rete locale, con barra stile, scelta della presentazione, anteprima della slide in onda e di quella successiva e comandi avanti/indietro dal telefono.
+            ### 🇮🇹 Italiano
+            **Come si usa**: doppio clic su `DeckWhisperer.exe`; nel browser si apre la pagina di avvio con il QR code. Inquadralo con lo smartphone (stessa rete Wi-Fi), scegli cosa deve mostrare il telefono (stile testo, comandi slide, slide in onda/successiva, barra comandi, tutto schermo) e avvia la presentazione in PowerPoint. Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti le **Reti private**.
+            Istruzioni complete: [ISTRUZIONI.md](https://github.com/${{ github.repository }}/blob/main/docs/ISTRUZIONI.md).
 
-            reMNote – Note del relatore  
+            ---
             Ideato e sviluppato da [www.andreabattaglioli.it](https://www.andreabattaglioli.it) · [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
-
-            Istruzioni complete nel [README](https://github.com/${{ github.repository }}#readme).

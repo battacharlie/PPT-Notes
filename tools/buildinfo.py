@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Scrive le informazioni di versione usate dalla compilazione di reMNote.
+"""Scrive le informazioni di versione usate dalla compilazione di DeckWhisperer.
 
 Uso:  python tools/buildinfo.py                 (legge il file VERSION)
       python tools/buildinfo.py <visibile> <numero>   (usato dalla compilazione automatica)
 
 Crea windows/_buildinfo.py (versione mostrata nel programma) e
-windows/version_info.txt (proprietà del file reMNote.exe).
+windows/version_info.txt (proprietà del file DeckWhisperer.exe).
 """
 import os
 import re
@@ -29,12 +29,12 @@ TEMPLATE = """VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName', 'www.andreabattaglioli.it'),
-        StringStruct('FileDescription', 'reMNote - note del relatore da PowerPoint'),
+        StringStruct('FileDescription', 'DeckWhisperer - Remote presenter notes & presentation control'),
         StringStruct('FileVersion', '%(dotted)s'),
-        StringStruct('InternalName', 'reMNote'),
+        StringStruct('InternalName', 'DeckWhisperer'),
         StringStruct('LegalCopyright', 'Andrea Battaglioli - www.andreabattaglioli.it - Powered by www.mywebtvlive.com'),
-        StringStruct('OriginalFilename', 'reMNote.exe'),
-        StringStruct('ProductName', 'reMNote'),
+        StringStruct('OriginalFilename', 'DeckWhisperer.exe'),
+        StringStruct('ProductName', 'DeckWhisperer'),
         StringStruct('ProductVersion', '%(dotted)s')
       ])
     ]),
