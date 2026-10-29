@@ -3,4 +3,4 @@ __pycache__/
 build/
 dist/
 *.spec
-windows/PPTNotes.exe
+windows/reMNote.exe

@@ -20,25 +20,43 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Controlla che il tag coincida con la versione nel codice
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = python -c "import re;print(re.search(r'APP_VERSION = \"(.+?)\"', open('windows/remnote.py', encoding='utf-8').read()).group(1))"
+          if ($env:GITHUB_REF_NAME -ne "v$v") { throw "Il tag $env:GITHUB_REF_NAME non coincide con la versione nel codice ($v)" }
+
       - name: Installa dipendenze
         run: python -m pip install -r windows/requirements.txt
 
-      - name: Crea PPTNotes.exe
+      - name: Crea reMNote.exe
         run: >
           python -m PyInstaller --onefile --console --noconfirm --clean
-          --name PPTNotes
+          --name reMNote
+          --icon windows/assets/remnote.ico
+          --add-data "windows/assets;assets"
+          --version-file windows/version_info.txt
           --hidden-import win32com.client --hidden-import pythoncom
-          windows/ppt_notes.py
+          windows/remnote.py
 
       - name: Collaudo exe (modalità demo, senza PowerPoint)
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist\PPTNotes.exe -ArgumentList "--demo","--no-browser","--port","8099" -PassThru
+          $vi = (Get-Item dist\reMNote.exe).VersionInfo
+          if ($vi.ProductName -ne "reMNote") { throw "Info versione exe errate: $($vi.ProductName)" }
+          $p = Start-Process -FilePath dist\reMNote.exe -ArgumentList "--demo","--no-browser","--port","8099" -PassThru
           Start-Sleep -Seconds 10
+          $h = Invoke-WebRequest http://localhost:8099/ -UseBasicParsing
+          if ($h.Content -notmatch "reMNote" -or $h.Content -notmatch "mywebtvlive.com") { throw "pagina senza nome/crediti" }
           $s = Invoke-WebRequest http://localhost:8099/state -UseBasicParsing
           if ($s.Content -notmatch "demo_apertura") { throw "stato non valido: $($s.Content)" }
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
           if ($q.Content -notmatch "<svg") { throw "QR non valido" }
+          foreach ($f in "static/mwtl-logo.png","static/remnote-192.png","favicon.ico") {
+            $r = Invoke-WebRequest "http://localhost:8099/$f" -UseBasicParsing
+            if ($r.StatusCode -ne 200 -or $r.RawContentLength -lt 500) { throw "asset mancante: $f" }
+          }
           $c = Invoke-WebRequest -Method Post -Uri http://localhost:8099/cmd -Body '{"id":"d1","action":"next"}' -UseBasicParsing
           if ($c.Content -notmatch '"ok": true') { throw "comando non valido: $($c.Content)" }
           Stop-Process -Id $p.Id -Force
@@ -46,11 +64,17 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: PPTNotes-windows
-          path: dist/PPTNotes.exe
+          name: reMNote-windows
+          path: dist/reMNote.exe
 
       - name: Pubblica release (solo sui tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/PPTNotes.exe
+          name: reMNote ${{ github.ref_name }}
+          files: dist/reMNote.exe
+          generate_release_notes: true
+          body: |
+            **reMNote** legge le note del relatore da PowerPoint in presentazione e le mostra in tempo reale su una pagina web della rete locale (anche da smartphone, con QR code).
+
+            Scarica `reMNote.exe`, avvialo sul PC dove gira PowerPoint e inquadra il QR. Alla prima esecuzione Windows chiede l'accesso alla rete: consenti le *Reti private*.

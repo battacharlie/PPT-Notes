@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PPT Notes Server - versione 3
+reMNote - note del relatore da PowerPoint
 Legge le note del relatore da PowerPoint (in presentazione) e le pubblica su una
 pagina web raggiungibile dalla rete locale, in tempo reale.
 
-Novita' della v3:
+Funzioni:
   - piu' presentazioni aperte contemporaneamente: ciascun dispositivo sceglie quale seguire
   - comandi per avanzare/tornare/andare a una slide dal telefono (PIN opzionale)
   - schermo sempre acceso (dove il browser lo consente)
 
 Uso:
-    py ppt_notes_v3.py                  (Windows, con PowerPoint installato)
-    py ppt_notes_v3.py --pin 1234       (i comandi richiedono il PIN)
-    py ppt_notes_v3.py --no-control     (disabilita del tutto i comandi)
-    py ppt_notes_v3.py --demo           (prova senza PowerPoint)
-    py ppt_notes_v3.py --port 8080
+    py remnote.py                  (Windows, con PowerPoint installato)
+    py remnote.py --pin 1234       (i comandi richiedono il PIN)
+    py remnote.py --no-control     (disabilita del tutto i comandi)
+    py remnote.py --demo           (prova senza PowerPoint)
+    py remnote.py --port 8080
 """
 import argparse
 import json
+import os
 import queue
 import socket
 import sys
@@ -27,9 +28,31 @@ import time
 import webbrowser
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
+APP_NAME = "reMNote"
+APP_VERSION = "1.0"
 PIN = ""
 CONTROL = True
 BASE_URL = ""
+
+ASSET_FILES = {
+    "remnote-512.png": "image/png", "remnote-192.png": "image/png", "remnote-64.png": "image/png",
+    "remnote-32.png": "image/png", "apple-touch-icon.png": "image/png", "mwtl-logo.png": "image/png",
+    "remnote.ico": "image/x-icon",
+}
+
+
+def resource_path(*parts):
+    """Percorso di un file incluso nel programma (anche dentro l'exe PyInstaller)."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
+CREDITS_HTML = (
+    '<b>reMNote</b> – Note del relatore<br>Ideato e sviluppato da '
+    '<a href="https://www.andreabattaglioli.it" target="_blank" rel="noopener">www.andreabattaglioli.it</a> · '
+    '<a class="mwtl" href="https://www.mywebtvlive.com" target="_blank" rel="noopener">'
+    '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
+)
 
 STATE = {"pin_required": False, "control": True, "shows": []}
 VERSION = 0
@@ -258,10 +281,17 @@ def qr_console(text):
 
 QR_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>QR note relatore</title>
+<link rel="icon" type="image/png" href="/static/remnote-64.png">
 <style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
-justify-content:center;background:#fff;font-family:Arial,sans-serif;color:#000}
-img{width:min(80vw,80vh);height:min(80vw,80vh)}p{font-size:28px;margin:12px}</style></head>
-<body><img src="/qr.svg" alt="QR"><p>__URL__</p><p style="font-size:16px">Inquadra con lo smartphone (stessa rete Wi-Fi)</p></body></html>"""
+justify-content:center;background:#fff;font-family:Arial,sans-serif;color:#000;text-align:center}
+img.qr{width:min(70vw,70vh);height:min(70vw,70vh)}p{font-size:28px;margin:10px}
+.hd{display:flex;align-items:center;gap:12px;font-size:34px;font-weight:700;color:#14434d}
+.hd img{width:56px;height:56px}.cr{font-size:14px;color:#444;line-height:1.5}
+.cr a{color:#14434d}.cr img{vertical-align:middle;margin-right:4px}</style></head>
+<body><div class="hd"><img src="/static/remnote-192.png" alt="">reMNote</div>
+<img class="qr" src="/qr.svg" alt="QR"><p>__URL__</p>
+<p style="font-size:16px">Inquadra con lo smartphone (stessa rete Wi-Fi)</p>
+<div class="cr">__CREDITS__</div></body></html>"""
 
 
 # -------------------------------------------------------------------- Server
@@ -320,11 +350,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
-            self._send(200, "text/html; charset=utf-8", PAGE.encode("utf-8"))
+            self._send(200, "text/html; charset=utf-8",
+                       PAGE.replace("__CREDITS__", CREDITS_HTML).replace("__VERSION__", APP_VERSION).encode("utf-8"))
+        elif path.startswith("/static/") or path == "/favicon.ico":
+            name = "remnote.ico" if path == "/favicon.ico" else path[len("/static/"):]
+            if name not in ASSET_FILES:
+                self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+                return
+            try:
+                with open(resource_path("assets", name), "rb") as f:
+                    data = f.read()
+            except OSError:
+                self._send(404, "text/plain; charset=utf-8", b"Non trovato")
+                return
+            self._send(200, ASSET_FILES[name], data)
         elif path == "/qr.svg":
             self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
         elif path == "/qr":
-            self._send(200, "text/html; charset=utf-8", QR_PAGE.replace("__URL__", BASE_URL).encode("utf-8"))
+            self._send(200, "text/html; charset=utf-8", QR_PAGE.replace("__URL__", BASE_URL).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))
@@ -383,7 +426,11 @@ PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Note relatore</title>
+<title>reMNote</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/static/remnote-64.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/remnote-32.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#14434d">
 <style>
   :root { --fg:#ffffff; --bg:#000000; }
   * { box-sizing: border-box; }
@@ -413,6 +460,15 @@ PAGE = r"""<!DOCTYPE html>
   #ctl .mid input { width:70px; font:16px Arial, sans-serif; text-align:center; }
   #ctl .mid button { font-size:14px; padding:4px 10px; }
   #ctlmsg { color:#f88; font-size:12px; min-height:14px; }
+  #infoov { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:9;
+            align-items:center; justify-content:center; padding:16px; }
+  #infobox { background:#fff; color:#111; border-radius:14px; padding:22px 26px; max-width:440px;
+             text-align:center; font:15px/1.6 Arial, sans-serif; }
+  #infobox img.logo { width:96px; height:96px; }
+  #infobox h2 { margin:6px 0 0; color:#14434d; }
+  #infobox .ver { color:#666; font-size:13px; margin-bottom:12px; }
+  #infobox a { color:#14434d; }
+  #infobox .mwtl img { vertical-align:middle; margin-right:4px; }
   body.hidebar #bar { display:none; }
   body.noctl #ctl { display:none; }
   #showbar { position:fixed; right:8px; top:8px; display:none; opacity:.4; }
@@ -450,6 +506,7 @@ PAGE = r"""<!DOCTYPE html>
   <button id="full">Schermo intero</button>
   <button id="ctlb">Comandi</button>
   <button id="qrb">QR</button>
+  <button id="infob">Info</button>
   <button id="hide">Nascondi barra</button>
   <div id="info"><span id="pos"></span><span id="dot" title="Presentazione"></span></div>
 </div>
@@ -464,6 +521,15 @@ PAGE = r"""<!DOCTYPE html>
   <button id="next" class="big">Avanti ▶</button>
 </div>
 <button id="showbar">Barra</button>
+<div id="infoov">
+  <div id="infobox">
+    <img class="logo" src="/static/remnote-192.png" alt="reMNote">
+    <h2>reMNote</h2>
+    <div class="ver">Versione __VERSION__</div>
+    <div>__CREDITS__</div>
+    <div style="margin-top:12px;color:#888;font-size:12px">Tocca per chiudere</div>
+  </div>
+</div>
 <div id="qrov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9;align-items:center;justify-content:center">
   <img src="/qr.svg" alt="QR" style="width:min(80vw,80vh);height:min(80vw,80vh);background:#fff">
 </div>
@@ -504,6 +570,8 @@ $("full").onclick = () => {
   else document.documentElement.requestFullscreen().catch(()=>{});
 };
 $("qrb").onclick = () => { $("qrov").style.display = "flex"; };
+$("infob").onclick = () => { $("infoov").style.display = "flex"; };
+$("infoov").onclick = () => { $("infoov").style.display = "none"; };
 $("qrov").onclick = () => { $("qrov").style.display = "none"; };
 $("hide").onclick = () => document.body.classList.add("hidebar");
 $("showbar").onclick = () => document.body.classList.remove("hidebar");
@@ -669,8 +737,13 @@ def main():
     target = poll_demo if args.demo else poll_powerpoint
     threading.Thread(target=target, args=(args.interval,), daemon=True).start()
 
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleTitleW("%s %s" % (APP_NAME, APP_VERSION))
+    except Exception:
+        pass
     print("=" * 60)
-    print(" SERVER NOTE RELATORE ATTIVO (v3)")
+    print(" %s %s - note del relatore sempre con te" % (APP_NAME, APP_VERSION))
     print("=" * 60)
     print(" Indirizzo per smartphone e altri PC della rete:")
     print("   " + BASE_URL)
@@ -696,6 +769,9 @@ def main():
     print(" Alla prima esecuzione Windows chiede di consentire l'accesso alla rete:")
     print(" scegli 'Reti private' (e 'Reti pubbliche' se il Wi-Fi e' visto come pubblico).")
     print(" Chiudi questa finestra per fermare il programma.")
+    print()
+    print(" reMNote - Ideato e sviluppato da www.andreabattaglioli.it")
+    print(" Powered by www.mywebtvlive.com - Made in Bolognina")
 
     if not args.no_browser:
         try:
