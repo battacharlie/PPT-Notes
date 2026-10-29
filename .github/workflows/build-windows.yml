@@ -56,12 +56,13 @@ jobs:
       - name: Informazioni di versione
         run: python tools/buildinfo.py "${{ steps.ver.outputs.shown }}" "${{ steps.ver.outputs.num }}"
 
-      - name: Crea DeckWhisperer.exe
+      - name: Crea mefistofele.exe
         run: >
           python -m PyInstaller --onefile --console --noconfirm --clean
-          --name DeckWhisperer
+          --name mefistofele
           --icon windows/assets/deckwhisperer.ico
           --add-data "windows/assets;assets"
+          --add-data "docs;docs"
           --version-file windows/version_info.txt
           --hidden-import win32com.client --hidden-import pythoncom
           windows/deckwhisperer.py
@@ -69,9 +70,9 @@ jobs:
       - name: Collaudo exe (modalità demo, senza PowerPoint)
         shell: pwsh
         run: |
-          $vi = (Get-Item dist\DeckWhisperer.exe).VersionInfo
-          if ($vi.ProductName -ne "DeckWhisperer") { throw "Info versione exe errate: $($vi.ProductName)" }
-          $p = Start-Process -FilePath dist\DeckWhisperer.exe -ArgumentList "--demo","--no-browser","--port","8099" -PassThru
+          $vi = (Get-Item dist\mefistofele.exe).VersionInfo
+          if ($vi.ProductName -ne "MEFISTOFELE DeckWhisperer") { throw "Info versione exe errate: $($vi.ProductName)" }
+          $p = Start-Process -FilePath dist\mefistofele.exe -ArgumentList "--demo","--no-browser","--port","8099" -PassThru
           Start-Sleep -Seconds 10
           $h = Invoke-WebRequest http://localhost:8099/ -UseBasicParsing
           if ($h.Content -notmatch "DeckWhisperer" -or $h.Content -notmatch "mywebtvlive.com") { throw "pagina senza nome/crediti" }
@@ -81,13 +82,17 @@ jobs:
           $q = Invoke-WebRequest http://localhost:8099/qr.svg -UseBasicParsing
           if ($q.Content -notmatch "<svg") { throw "QR non valido" }
           $d = Invoke-WebRequest http://localhost:8099/diagnostica -UseBasicParsing
-          if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio DeckWhisperer") { throw "pagina diagnostica non valida" }
-          if (-not (Test-Path dist\DeckWhisperer.log)) { throw "DeckWhisperer.log non creato accanto all'exe" }
+          if ($d.Content -notmatch "Registro previsto" -or $d.Content -notmatch "Avvio MEFISTOFELE DeckWhisperer") { throw "pagina diagnostica non valida" }
+          if (-not (Test-Path dist\mefistofele.log)) { throw "mefistofele.log non creato accanto all'exe" }
           $g = Invoke-WebRequest http://localhost:8099/start -UseBasicParsing
-          if ($g.Content -notmatch "Cosa vuoi far vedere" -or $g.Content -notmatch "/qr.svg" -or $g.Content -notmatch "u_full" -or $g.Content -notmatch "Remote presenter notes") { throw "pagina di avvio non valida" }
+          if ($g.Content -notmatch "Cosa vuoi far vedere" -or $g.Content -notmatch "/qr.svg" -or $g.Content -notmatch "u_goto" -or $g.Content -notmatch "Remote notes") { throw "pagina di gestione non valida" }
           $j = Invoke-WebRequest http://localhost:8099/settings.json -UseBasicParsing
           if ($j.Content -notmatch '"ui"') { throw "impostazioni non valide: $($j.Content)" }
           if ($s.Content -notmatch '"ui"') { throw "stato senza scelte per i telefoni" }
+          $gu = Invoke-WebRequest http://localhost:8099/guida -UseBasicParsing
+          if ($gu.Content -notmatch "Avvio in 4 passi") { throw "guida non inclusa nell'exe" }
+          $ge = Invoke-WebRequest "http://localhost:8099/guida?lang=en" -UseBasicParsing
+          if ($ge.Content -notmatch "Quick start") { throw "guida inglese non inclusa nell'exe" }
           $sl = Invoke-WebRequest http://localhost:8099/slide/d1/1.png -UseBasicParsing
           if ($sl.StatusCode -ne 200 -or $sl.Content -notmatch "demo_apertura") { throw "anteprima slide non valida" }
           if ($h.Content -notmatch "Slide successiva") { throw "pulsante Slide successiva mancante" }
@@ -102,13 +107,13 @@ jobs:
 
       - name: Impronte SHA256
         shell: bash
-        run: cd dist && sha256sum DeckWhisperer.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+        run: cd dist && sha256sum mefistofele.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DeckWhisperer-windows
+          name: mefistofele-windows
           path: |
-            dist/DeckWhisperer.exe
+            dist/mefistofele.exe
             dist/SHA256SUMS.txt
 
       - name: Pubblica release
@@ -117,28 +122,28 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: DeckWhisperer ${{ steps.ver.outputs.num }}
+          name: MEFISTOFELE DeckWhisperer ${{ steps.ver.outputs.num }}
           files: |
-            dist/DeckWhisperer.exe
+            dist/mefistofele.exe
             dist/SHA256SUMS.txt
             docs/INSTRUCTIONS.md
             docs/ISTRUZIONI.md
           body: |
-            ## DeckWhisperer – Remote presenter notes & presentation control
+            ## MEFISTOFELE DeckWhisperer – Remote notes & control for PowerPoint
 
             ### Download
             | File | For / Per |
             |---|---|
-            | `DeckWhisperer.exe` | Windows 10/11 + PowerPoint |
+            | `mefistofele.exe` | Windows 10/11 + PowerPoint |
             | `INSTRUCTIONS.md` | Instructions in English |
             | `ISTRUZIONI.md` | Istruzioni in italiano |
 
             ### 🇬🇧 English
-            **How to use**: double-click `DeckWhisperer.exe`; the start page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi), pick what the phone should show (text style, slide controls, current/next slide, control bar, full screen) and start your slide show in PowerPoint. If Windows says "Windows protected your PC": *More info → Run anyway*. On first start allow **Private networks**.
+            **How to use**: double-click `mefistofele.exe`; the management page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi), pick the network adapter for the QR and what the phone should show (toolbar, text style, current/next slide, go to slide, navigation, lock remote screen) and start your slide show in PowerPoint. If Windows says "Windows protected your PC": *More info → Run anyway*. On first start allow **Private networks**.
             Full instructions: [INSTRUCTIONS.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTRUCTIONS.md).
 
             ### 🇮🇹 Italiano
-            **Come si usa**: doppio clic su `DeckWhisperer.exe`; nel browser si apre la pagina di avvio con il QR code. Inquadralo con lo smartphone (stessa rete Wi-Fi), scegli cosa deve mostrare il telefono (stile testo, comandi slide, slide in onda/successiva, barra comandi, tutto schermo) e avvia la presentazione in PowerPoint. Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti le **Reti private**.
+            **Come si usa**: doppio clic su `mefistofele.exe`; nel browser si apre la pagina di gestione con il QR code. Inquadralo con lo smartphone (stessa rete Wi-Fi), scegli la scheda di rete del QR e cosa deve mostrare il telefono (barra degli strumenti, stile testo, slide in onda/successiva, vai alla slide, navigazione, blocca schermo remoto) e avvia la presentazione in PowerPoint. Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*. Al primo avvio consenti le **Reti private**.
             Istruzioni complete: [ISTRUZIONI.md](https://github.com/${{ github.repository }}/blob/main/docs/ISTRUZIONI.md).
 
             ---

@@ -115,25 +115,25 @@ def post(path, obj):
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read())
 tmp = tempfile.mkdtemp()
-m.settings_paths = lambda name="DeckWhisperer.json": [os.path.join(tmp, "DeckWhisperer.json")]
+m.settings_paths = lambda name="mefistofele.json": [os.path.join(tmp, "mefistofele.json")]
 m.BASE_URL = "http://192.168.1.5:8080/"
 st, ct, _, body = get("/start")
-check("pagina di avvio dal PC (200, HTML, QR e caselle)", st == 200 and "text/html" in ct and b"/qr.svg" in body and b"u_cur" in body and b"u_bar" in body and b"u_full" in body and b"192.168.1.5:8080" in body)
+check("pagina di avvio dal PC (200, HTML, QR e caselle)", st == 200 and "text/html" in ct and b"/qr.svg" in body and b"u_cur" in body and b"u_bar" in body and b"u_goto" in body and "MEFISTOFELE DeckWhisperer".encode() in body and b"/guida" in body and b"id=\"nic\"" in body and b"192.168.1.5:8080" in body)
 check("/qr mostra la stessa pagina di avvio", get("/qr")[3] == body)
 st, ct, _, body = get("/settings.json"); d = json.loads(body)
-check("impostazioni iniziali: tutto visibile, nessun PIN", st == 200 and d["ui"] == {"style": True, "ctl": True, "cur": True, "next": True, "bar": True, "full": False} and d["pin"] == "")
+check("impostazioni iniziali: tutto visibile, nessun PIN", st == 200 and d["ui"] == {"bar": True, "style": True, "cur": True, "next": True, "goto": True, "ctl": True, "lock": False} and d["nic"] == "" and isinstance(d["nics"], list) and d["pin"] == "")
 _, _, _, body = get("/state"); s0 = json.loads(body)
 check("stato per i telefoni contiene 'ui'", s0["ui"]["cur"] is True and s0["control"] is True)
 ver0 = m.VERSION
-st, r = post("/settings", {"ui": {"style": False, "ctl": True, "cur": True, "next": False, "bar": False, "full": True}, "pin": "4321"})
+st, r = post("/settings", {"ui": {"style": False, "ctl": True, "cur": True, "next": False, "bar": False, "goto": False}, "pin": "4321"})
 check("salvataggio impostazioni (200)", st == 200 and r["ok"])
 _, _, _, body = get("/state"); s1 = json.loads(body)
-check("i telefoni ricevono subito le nuove scelte", s1["ui"] == {"style": False, "ctl": True, "cur": True, "next": False, "bar": False, "full": True} and s1["pin_required"] is True and m.VERSION > ver0)
-saved = json.load(open(os.path.join(tmp, "DeckWhisperer.json"), encoding="utf-8"))
-check("scelte e PIN salvati su file", saved["ui"]["next"] is False and saved["ui"]["bar"] is False and saved["ui"]["full"] is True and saved["pin"] == "4321")
-m.UI.update({k: (k != "full") for k in m.UI_KEYS}); m.PIN = ""
+check("i telefoni ricevono subito le nuove scelte", s1["ui"] == {"bar": False, "style": False, "cur": True, "next": False, "goto": False, "ctl": True, "lock": False} and s1["pin_required"] is True and m.VERSION > ver0)
+saved = json.load(open(os.path.join(tmp, "mefistofele.json"), encoding="utf-8"))
+check("scelte e PIN salvati su file", saved["ui"]["next"] is False and saved["ui"]["bar"] is False and saved["ui"]["goto"] is False and saved["pin"] == "4321")
+m.UI.update({k: True for k in m.UI_KEYS}); m.PIN = ""
 m.PIN = m.load_settings()
-check("riavvio: scelte e PIN riletti dal file", m.PIN == "4321" and m.UI["style"] is False and m.UI["next"] is False and m.UI["cur"] is True and m.UI["full"] is True and m.UI["bar"] is False)
+check("riavvio: scelte e PIN riletti dal file", m.PIN == "4321" and m.UI["style"] is False and m.UI["next"] is False and m.UI["cur"] is True and m.UI["goto"] is False and m.UI["bar"] is False)
 st, r = post("/settings", {"ui": {"cur": "si"}}); check("valore non valido rifiutato (400)", st == 400)
 st, r = post("/settings", {"ui": {}, "pin": "x" * 40}); check("PIN troppo lungo rifiutato (400)", st == 400)
 st, r = post("/cmd", {"id": "111", "action": "next", "pin": "0000"}); check("comando con PIN errato -> 403", st == 403 and r["error"] == "pin")
@@ -142,13 +142,13 @@ st, r = post("/cmd", {"id": "111", "action": "next"}); check("comandi spenti dal
 _, _, _, body = get("/state"); check("stato: control False e ui.ctl False", json.loads(body)["control"] is False and json.loads(body)["ui"]["ctl"] is False)
 m.NO_CONTROL = True; post("/settings", {"ui": {"ctl": True}}); _, _, _, body = get("/state")
 check("--no-control vince sulla casella", json.loads(body)["ui"]["ctl"] is False and json.loads(body)["control"] is False)
-m.NO_CONTROL = False; post("/settings", {"ui": {k: (k != "full") for k in m.UI_KEYS}, "pin": ""})
+m.NO_CONTROL = False; post("/settings", {"ui": {k: True for k in m.UI_KEYS}, "pin": ""})
 # impostazioni salvate dalla 2.0 (reMNote.json): lette una volta
 old_dir = tempfile.mkdtemp(); json.dump({"ui": {"cur": False}, "pin": "77"}, open(os.path.join(old_dir, "reMNote.json"), "w"))
-real_paths = m.settings_paths; m.settings_paths = lambda name="DeckWhisperer.json": [os.path.join(old_dir, name)]
-m.UI.update({k: (k != "full") for k in m.UI_KEYS})
+real_paths = m.settings_paths; m.settings_paths = lambda name="mefistofele.json": [os.path.join(old_dir, name)]
+m.UI.update({k: True for k in m.UI_KEYS})
 check("migrazione: legge reMNote.json della 2.0", m.load_settings() == "77" and m.UI["cur"] is False)
-m.settings_paths = real_paths; m.UI.update({k: (k != "full") for k in m.UI_KEYS})
+m.settings_paths = real_paths; m.UI.update({k: True for k in m.UI_KEYS})
 # una richiesta da un altro dispositivo non puo' cambiare le impostazioni
 m.local_ips = lambda: []
 class FakeSelf:
@@ -159,6 +159,43 @@ FakeSelf.client_address = ("127.0.0.1", 5555); check("richiesta dal PC e' 'local
 FakeSelf.client_address = ("::1", 5555); check("IPv6 locale e' 'locale'", FakeSelf()._is_local() is True)
 m.local_ips = lambda: ["192.168.1.5"]; FakeSelf.client_address = ("192.168.1.5", 5555)
 check("indirizzo di rete del PC stesso e' 'locale'", FakeSelf()._is_local() is True)
+# ---- versione 3: scheda di rete del QR e guida
+m.PORT = 8080
+m.list_nics = lambda: [{"name": "Ethernet produzione", "ip": "10.10.0.5"}, {"name": "Wi-Fi", "ip": "192.168.1.5"}]
+m.primary_ip = lambda: "192.168.1.5"
+m.NIC_IP = ""; m.update_base_url()
+check("QR: scheda automatica = IP principale", m.BASE_URL == "http://192.168.1.5:8080/")
+st, r = post("/settings", {"ui": {}, "nic": "10.10.0.5"})
+check("scheda di rete scelta: QR e indirizzo cambiano subito", st == 200 and m.BASE_URL == "http://10.10.0.5:8080/")
+d = json.loads(get("/settings.json")[3])
+check("settings.json: elenco schede, scelta e indirizzo", d["nic"] == "10.10.0.5" and d["url"] == "http://10.10.0.5:8080/" and len(d["nics"]) == 2 and d["auto_ip"] == "192.168.1.5")
+check("pagina di avvio mostra l'indirizzo della scheda scelta", b"10.10.0.5:8080" in get("/start")[3])
+saved = json.load(open(os.path.join(tmp, "mefistofele.json"), encoding="utf-8"))
+check("scheda salvata su file", saved["nic"] == "10.10.0.5")
+st, r = post("/settings", {"ui": {}, "nic": "8.8.8.8"}); check("scheda inesistente rifiutata (400)", st == 400 and m.BASE_URL == "http://10.10.0.5:8080/")
+m.NIC_IP = ""; m.load_settings(); m.update_base_url()
+check("riavvio: scheda riletta dal file", m.NIC_IP == "10.10.0.5" and m.BASE_URL == "http://10.10.0.5:8080/")
+m.list_nics = lambda: [{"name": "Wi-Fi", "ip": "192.168.1.5"}]; m.update_base_url()
+check("scheda sparita: si torna all'automatica", m.BASE_URL == "http://192.168.1.5:8080/")
+post("/settings", {"ui": {}, "nic": ""}); check("scheda 'automatica' selezionabile", m.NIC_IP == "")
+st, ct, _, body = get("/guida")
+check("guida italiana (200, HTML con titoli e tabelle)", st == 200 and "text/html" in ct and b"<h2>" in body and b"<table>" in body and "Avvio in 4 passi".encode() in body)
+st, ct, _, body = get("/guida?lang=en")
+check("guida inglese", st == 200 and b"Quick start" in body and b'lang="en"' in body)
+check("guida: collegamento all'altra lingua", b"/guida?lang=it" in body)
+check("md_to_html: elenco con riga di continuazione", m.md_to_html("1. uno\n   due\n2. tre") == "<ol><li>uno due</li><li>tre</li></ol>")
+check("md_to_html: HTML nel testo e' neutralizzato", "<script>" not in m.md_to_html("x <script>alert(1)</script>"))
+m.UI.update({k: True for k in m.UI_KEYS}); m.PIN = ""
+# ---- Blocca schermo Remoto: nessun comando accettato dal server
+post("/settings", {"ui": {"lock": True, "ctl": True, "goto": True}, "pin": ""})
+_, _, _, body = get("/state"); s2 = json.loads(body)
+check("schermo remoto bloccato: stato con lock, senza comandi", s2["ui"]["lock"] is True and s2["ui"]["ctl"] is False and s2["ui"]["goto"] is False and s2["control"] is False)
+st, r = post("/cmd", {"id": "111", "action": "next"}); check("schermo remoto bloccato: i comandi sono rifiutati (403)", st == 403)
+d = json.loads(get("/settings.json")[3]); check("pannello: i flag scelti restano memorizzati sotto il blocco", d["ui"]["lock"] is True and d["ui"]["ctl"] is True)
+post("/settings", {"ui": {"lock": False}, "pin": ""}); _, _, _, body = get("/state")
+check("schermo remoto sbloccato: i comandi tornano", json.loads(body)["control"] is True and json.loads(body)["ui"]["ctl"] is True)
+b = get("/start")[3]
+check("pagina di gestione: nomi e ordine dei flag", [b.find(x.encode()) for x in ("Barra degli strumenti", "Stile Testo", "Slide in Onda", "Slide Successiva", "Vai alla Slide", "Navigazione", "Blocca schermo Remoto")] == sorted(b.find(x.encode()) for x in ("Barra degli strumenti", "Stile Testo", "Slide in Onda", "Slide Successiva", "Vai alla Slide", "Navigazione", "Blocca schermo Remoto")) and b.find(b"Blocca schermo Remoto") > 0)
 stop = True
 
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)

@@ -3,8 +3,8 @@ __pycache__/
 build/
 dist/
 *.spec
-windows/DeckWhisperer.exe
+windows/mefistofele.exe
 windows/_buildinfo.py
 windows/version_info.txt
-DeckWhisperer.log
-DeckWhisperer.json
+mefistofele.log
+mefistofele.json
