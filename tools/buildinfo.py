@@ -5,7 +5,7 @@ Uso:  python tools/buildinfo.py                 (legge il file VERSION)
       python tools/buildinfo.py <visibile> <numero>   (usato dalla compilazione automatica)
 
 Crea windows/_buildinfo.py (versione mostrata nel programma) e
-windows/version_info.txt (proprietà del file DeckWhisperer.exe).
+windows/version_info.txt (proprietà del file mefistofele.exe).
 """
 import os
 import re
@@ -31,9 +31,9 @@ TEMPLATE = """VSVersionInfo(
         StringStruct('CompanyName', 'www.andreabattaglioli.it'),
         StringStruct('FileDescription', 'MEFISTOFELE DeckWhisperer - Remote notes & control for PowerPoint'),
         StringStruct('FileVersion', '%(dotted)s'),
-        StringStruct('InternalName', 'DeckWhisperer'),
+        StringStruct('InternalName', 'mefistofele'),
         StringStruct('LegalCopyright', 'Andrea Battaglioli - www.andreabattaglioli.it - Powered by www.mywebtvlive.com'),
-        StringStruct('OriginalFilename', 'DeckWhisperer.exe'),
+        StringStruct('OriginalFilename', 'mefistofele.exe'),
         StringStruct('ProductName', 'MEFISTOFELE DeckWhisperer'),
         StringStruct('ProductVersion', '%(dotted)s')
       ])

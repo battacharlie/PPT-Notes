@@ -1,16 +1,16 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-echo === Creazione di DeckWhisperer.exe ===
+echo === Creazione di mefistofele.exe ===
 py -m pip install -r requirements.txt
 if errorlevel 1 goto errore
 py ..\tools\buildinfo.py
 if errorlevel 1 goto errore
-py -m PyInstaller --onefile --console --noconfirm --clean --name DeckWhisperer --icon assets\deckwhisperer.ico --add-data "assets;assets" --add-data "..\docs;docs" --version-file version_info.txt --hidden-import win32com.client --hidden-import pythoncom deckwhisperer.py
+py -m PyInstaller --onefile --console --noconfirm --clean --name mefistofele --icon assets\deckwhisperer.ico --add-data "assets;assets" --add-data "..\docs;docs" --version-file version_info.txt --hidden-import win32com.client --hidden-import pythoncom deckwhisperer.py
 if errorlevel 1 goto errore
-copy /Y dist\DeckWhisperer.exe DeckWhisperer.exe >nul
+copy /Y dist\mefistofele.exe mefistofele.exe >nul
 echo.
-echo FATTO: DeckWhisperer.exe e' in questa cartella.
+echo FATTO: mefistofele.exe e' in questa cartella.
 pause
 exit /b 0
 :errore

@@ -100,7 +100,7 @@ T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl")
   T("v2: stile spento dal PC -> nascosto e pulsante sparito", hasD("nostyle") && D.$("styleb").style.display === "none");
   T("v2: slide in onda spenta dal PC -> nascosta e pulsante sparito", !hasD("showcur") && D.$("curb").style.display === "none");
   T("v2: le altre restano disponibili", hasD("shownext") && D.$("nextb").style.display === "" && !hasD("noctl") && D.$("ctlb").style.display === "");
-  D.send({ control: true, ui: { style: true, ctl: false, cur: true, next: false }, shows: [sh(2)] });
+  D.send({ control: true, ui: { style: true, ctl: false, goto: false, cur: true, next: false }, shows: [sh(2)] });
   T("v2: comandi spenti dal PC -> area e pulsante nascosti", hasD("noctl") && D.$("ctlb").style.display === "none");
   T("v2: slide successiva spenta dal PC -> nascosta", !hasD("shownext") && D.$("nextb").style.display === "none");
   D.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true }, shows: [sh(2)] });
@@ -116,20 +116,44 @@ T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl")
   E.send({ control: true, ui: U({ goto: false }), shows: [sh(1)] });
   T("v3: 'Vai direttamente alla slide' spento dal PC -> nascosto, Avanti/Indietro restano", hasE("nogoto") && !hasE("noctl"));
   E.send({ control: true, ui: U({ bar: false }), shows: [sh(1)] });
-  T("v3: barra spenta dal PC -> classe nobar (resta la striscia)", hasE("nobar"));
+  T("v3: barra spenta dal PC -> classe nobar", hasE("nobar"));
   E.send({ control: true, ui: U({}), shows: [sh(1)] });
   T("v3: barra riaccesa subito", !hasE("nobar") && !hasE("nogoto"));
   E.$("hide").onclick();
   T("v3: 'Nascondi barra' -> classe hidebar (striscia visibile)", hasE("hidebar"));
   E.$("sbar").onclick();
   T("v3: pulsante Barra della striscia riapre la barra", !hasE("hidebar"));
-  E.send({ control: true, ui: U({ ctl: false }), shows: [sh(1)] });
-  T("v3: comandi spenti dal PC -> pulsante Comandi nella striscia nascosto", hasE("nostripctl"));
+  E.send({ control: true, ui: U({ ctl: false, goto: false }), shows: [sh(1)] });
+  T("v3: navigazione e vai spenti dal PC -> pulsante nella striscia nascosto", hasE("nostripctl"));
   E.send({ control: true, ui: U({}), shows: [sh(1)] });
   E.$("sctl").onclick();
   T("v3: striscia: pulsante Comandi nasconde Avanti/Indietro", hasE("noctl") && !E.$("sctl")._cls.has("on"));
   E.$("sctl").onclick();
   T("v3: e li rimostra", !hasE("noctl") && E.$("sctl")._cls.has("on"));
+  // ---- Barra degli strumenti spenta: vista fissa decisa dalla pagina di gestione
+  {
+    const F = boot({ pptCur: "0", pptNext: "0", pptStyle: "0", pptCtl: "0" });   // il telefono aveva nascosto tutto
+    const hasF = c => F.body._cls.has(c);
+    F.send({ control: true, ui: U({ bar: false }), shows: [sh(2)] });
+    T("fissa: gli elementi scelti compaiono anche se il telefono li aveva nascosti", hasF("showcur") && hasF("shownext") && !hasF("nostyle") && !hasF("noctl") && !hasF("nogoto") && !hasF("nonav"));
+    T("fissa: le anteprime si caricano", F.$("imgcur").src.includes("/slide/d1/2.png") && F.$("imgnext").src.includes("/slide/d1/3.png"));
+    F.$("hide").onclick();
+    T("fissa: 'Nascondi barra' non ha effetto (nessuna modifica possibile)", !hasF("hidebar"));
+    F.send({ control: true, ui: U({ bar: false, style: false, next: false, goto: false }), shows: [sh(2)] });
+    T("fissa: gli elementi non scelti restano nascosti", hasF("nostyle") && !hasF("shownext") && hasF("nogoto") && hasF("showcur") && !hasF("nonav"));
+    F.send({ control: true, ui: U({ bar: false, ctl: false }), shows: [sh(2)] });
+    T("fissa: solo 'Vai alla Slide' -> area comandi visibile, senza Avanti/Indietro", hasF("nonav") && !hasF("noctl") && !hasF("nogoto"));
+    F.send({ control: true, ui: U({ bar: false, ctl: false, goto: false }), shows: [sh(2)] });
+    T("fissa: né Navigazione né Vai -> area comandi nascosta", hasF("noctl"));
+    // Blocca schermo Remoto
+    F.send({ control: true, ui: U({ lock: true, ctl: false, goto: false }), shows: [sh(2)] });
+    T("schermo remoto bloccato: classe remlock, niente stile né comandi", hasF("remlock") && hasF("nostyle") && hasF("noctl"));
+    T("schermo remoto bloccato: restano le anteprime scelte", hasF("showcur") && hasF("shownext"));
+    F.send({ control: true, ui: U({ lock: true, cur: false, next: false, ctl: false, goto: false }), shows: [sh(2)] });
+    T("schermo remoto bloccato: con le anteprime spente restano solo le note", hasF("remlock") && !hasF("showcur") && !hasF("shownext"));
+    F.send({ control: true, ui: U({ lock: false }), shows: [sh(2)] });
+    T("schermo remoto sbloccato dal PC: torna la vista normale (scelte del telefono)", !hasF("remlock") && hasF("nostyle") && !hasF("showcur"));
+  }
   // lucchetto
   E.$("slock").onclick();
   T("v3: lucchetto -> schermo bloccato", hasE("locked"));

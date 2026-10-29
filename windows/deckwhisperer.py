@@ -68,9 +68,9 @@ CREDITS_HTML = (
     '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
 )
 
-UI_KEYS = ("bar", "style", "cur", "next", "goto", "ctl")
-# barra in alto, stile testo, slide in onda, slide successiva, "vai alla slide", avanti/indietro
-UI = {k: True for k in UI_KEYS}              # cosa possono vedere i telefoni (scelto dal PC)
+UI_KEYS = ("bar", "style", "cur", "next", "goto", "ctl", "lock")
+# barra degli strumenti, stile testo, slide in onda, slide successiva, vai alla slide, navigazione, blocca schermo remoto
+UI = {k: (k != "lock") for k in UI_KEYS}              # cosa possono vedere i telefoni (scelto dal PC)
 NIC_IP = ""                                  # scheda di rete scelta per il QR ("" = automatica)
 PORT = 8080              # cosa possono vedere i telefoni (scelto dal PC)
 NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
@@ -102,8 +102,9 @@ def set_state(shows):
 def ui_state():
     """Cosa mostrare sui telefoni: la scelta fatta dal PC, con i comandi spenti se serve."""
     ui = dict(UI)
-    ui["ctl"] = bool(UI["ctl"]) and not NO_CONTROL
-    ui["goto"] = bool(UI["goto"]) and not NO_CONTROL
+    stop = NO_CONTROL or bool(UI["lock"])        # --no-control o schermo remoto bloccato: nessun comando
+    ui["ctl"] = bool(UI["ctl"]) and not stop
+    ui["goto"] = bool(UI["goto"]) and not stop
     return ui
 
 
@@ -150,14 +151,14 @@ def update_base_url():
     BASE_URL = "http://%s:%d/" % (current_ip(), PORT)
 
 
-def settings_paths(name="DeckWhisperer.json"):
+def settings_paths(name="mefistofele.json"):
     """Dove salvare le impostazioni: accanto all'exe, poi nella cartella temporanea."""
     return [os.path.join(os.path.dirname(p), name) for p in log_paths()]
 
 
 def load_settings():
     """Legge le impostazioni salvate (se ci sono). Ritorna il PIN salvato."""
-    for pth in settings_paths() + settings_paths("reMNote.json"):   # l'ultimo e' il nome usato dalla 2.0
+    for pth in settings_paths() + settings_paths("DeckWhisperer.json") + settings_paths("reMNote.json"):   # i vecchi nomi (2.x)
         try:
             with open(pth, encoding="utf-8") as f:
                 data = json.load(f)
@@ -308,16 +309,16 @@ LOG_FILE_USED = [""]
 
 def log_path():
     base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base, "DeckWhisperer.log")
+    return os.path.join(base, "mefistofele.log")
 
 
 def log_paths():
     """Dove prova a scrivere il registro: accanto all'exe, poi nella cartella temporanea."""
-    return [log_path(), os.path.join(tempfile.gettempdir(), "DeckWhisperer.log")]
+    return [log_path(), os.path.join(tempfile.gettempdir(), "mefistofele.log")]
 
 
 def log(msg):
-    """Scrive un messaggio in console, in memoria e nel file DeckWhisperer.log (ogni messaggio una volta sola)."""
+    """Scrive un messaggio in console, in memoria e nel file mefistofele.log (ogni messaggio una volta sola)."""
     if msg in LOG_SEEN or len(LOG_SEEN) > 50:
         return
     LOG_SEEN.add(msg)
@@ -663,7 +664,7 @@ def qr_console(text):
 
 
 START_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - avvio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - gestione</title>
 <link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
 <style>
 :root{--bg:#f4f6f7;--card:#fff;--ink:#14262b;--mut:#5b6b70;--acc:#14434d;--ok:#1b7f4a;--bd:#d9e0e2}
@@ -681,6 +682,7 @@ header img{width:64px;height:64px}h1{font-size:26px;margin:0;letter-spacing:.02e
 .nic{margin-top:14px;text-align:left}.nic label{font-weight:700;font-size:14px;display:block;margin-bottom:5px}
 .nic select{width:100%;font-size:15px;padding:8px;border:1px solid var(--bd);border-radius:8px;background:#fff}
 .opt{display:flex;gap:12px;align-items:flex-start;padding:11px 4px;border-bottom:1px solid var(--bd);cursor:pointer}
+.lockopt{background:#fff4f2;border-radius:8px;margin-top:6px;border-bottom:0}
 .opt:last-of-type{border-bottom:0}.opt input{width:22px;height:22px;margin-top:2px;accent-color:var(--acc);flex:none}
 .opt b{display:block;font-size:16px}.opt span{color:var(--mut);font-size:14px}
 .pin{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
@@ -700,12 +702,13 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 <div class="nic"><label for="nic">Scheda di rete del QR</label><select id="nic"></select>
 <div class="hint" style="margin-top:5px">Scegli la scheda a cui sono collegati i telefoni (es. quella della rete di produzione).</div></div></div>
 <div class="card"><h2>2. Cosa vuoi far vedere sui telefoni</h2>
-<label class="opt"><input type="checkbox" id="u_bar"><div><b>Barra dei comandi in alto</b><span>Pulsanti colorati, QR, info. Spenta: restano note, scelta presentazione e la striscia con lucchetto</span></div></label>
-<label class="opt"><input type="checkbox" id="u_style"><div><b>Comandi stile testo</b><span>Font, dimensione, colori, interlinea e spaziatura</span></div></label>
-<label class="opt"><input type="checkbox" id="u_cur"><div><b>Slide in onda</b><span>Immagine della slide che il pubblico sta vedendo</span></div></label>
-<label class="opt"><input type="checkbox" id="u_next"><div><b>Slide successiva</b><span>Immagine della slide che arriva dopo</span></div></label>
-<label class="opt"><input type="checkbox" id="u_goto"><div><b>Vai direttamente alla slide</b><span>Campo numero e pulsante Vai per saltare a una slide</span></div></label>
-<label class="opt"><input type="checkbox" id="u_ctl"><div><b>Avanti / Indietro</b><span>Pulsanti per far avanzare e tornare indietro le slide</span></div></label>
+<label class="opt"><input type="checkbox" id="u_bar"><div><b>Barra degli strumenti</b><span>Pulsanti colorati, striscia con lucchetto, QR, info. Spenta: sul telefono compaiono solo gli elementi scelti qui sotto e non si può cambiare nulla</span></div></label>
+<label class="opt"><input type="checkbox" id="u_style"><div><b>Stile Testo</b><span>Font, dimensione, colori, interlinea e spaziatura</span></div></label>
+<label class="opt"><input type="checkbox" id="u_cur"><div><b>Slide in Onda</b><span>Immagine della slide che il pubblico sta vedendo</span></div></label>
+<label class="opt"><input type="checkbox" id="u_next"><div><b>Slide Successiva</b><span>Immagine della slide che arriva dopo</span></div></label>
+<label class="opt"><input type="checkbox" id="u_goto"><div><b>Vai alla Slide</b><span>Campo numero e pulsante Vai per saltare a una slide</span></div></label>
+<label class="opt"><input type="checkbox" id="u_ctl"><div><b>Navigazione</b><span>Pulsanti Avanti e Indietro per far scorrere le slide</span></div></label>
+<label class="opt lockopt"><input type="checkbox" id="u_lock"><div><b>Blocca schermo Remoto</b><span>Toglie tutti i comandi dal telefono: restano le note, che si possono solo scorrere se più lunghe dello schermo, e le anteprime scelte</span></div></label>
 <div class="pin"><label for="pin"><b>PIN per i comandi</b> (facoltativo)</label>
 <input id="pin" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="nessuno"><button id="savepin">Salva PIN</button></div>
 <div id="saved"></div>
@@ -714,7 +717,7 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 </div></div>
 <div class="cr">__CREDITS__</div></div>
 <script>
-const $ = id => document.getElementById(id), K = ["bar","style","cur","next","goto","ctl"];
+const $ = id => document.getElementById(id), K = ["bar","style","cur","next","goto","ctl","lock"];
 let timer = null;
 function flash(t){ $("saved").textContent = t; clearTimeout(timer); timer = setTimeout(() => { $("saved").textContent = ""; }, 2500); }
 async function save(){
@@ -729,7 +732,7 @@ async function save(){
 function load(first){
   fetch("/settings.json").then(r => r.json()).then(d => {
     if (first) {
-      K.forEach(k => { $("u_" + k).checked = d.ui[k] !== false; });
+      K.forEach(k => { $("u_" + k).checked = k === "lock" ? d.ui[k] === true : d.ui[k] !== false; });
       $("pin").value = d.pin || "";
       const sel = $("nic"); sel.innerHTML = "";
       const auto = document.createElement("option"); auto.value = "";
@@ -990,7 +993,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
         elif path in ("/start", "/qr"):
             if not self._is_local():
-                self._send(403, "text/plain; charset=utf-8", "Pagina di avvio: si apre solo dal PC dove gira DeckWhisperer".encode("utf-8"))
+                self._send(403, "text/plain; charset=utf-8", "Pagina di gestione: si apre solo dal PC dove gira DeckWhisperer".encode("utf-8"))
                 return
             self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__URL__", BASE_URL).replace("__NAME__", html_escape(APP_NAME))
                        .replace("__VERSION__", APP_VERSION).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
@@ -1136,8 +1139,13 @@ PAGE = r"""<!DOCTYPE html>
   #next { background:#1fae62 !important; border-color:#6fe0a2 !important; color:#05200f !important; }
   #go { background:#3b9cff !important; border-color:#9fcdff !important; color:#fff !important; min-height:36px; }
   #ctl .big:active { filter:brightness(1.25); transform:scale(.98); }
-  body.nobar #bar > *:not(#showlbl):not(#info) { display:none !important; }
-  body.nobar #showbar { display:none !important; }
+  /* barra spenta dal PC: restano solo gli elementi scelti nella pagina di gestione, nessuna modifica possibile */
+  body.nobar #bar > *:not(#showlbl):not(#info):not(.grp) { display:none !important; }
+  body.nobar #strip, body.nobar #lockov { display:none !important; }
+  body.nonav #prev, body.nonav #next { display:none; }
+  /* Blocca schermo Remoto: nessun comando, solo lettura e scorrimento delle note */
+  body.remlock #bar, body.remlock #strip, body.remlock #ctl, body.remlock #lockov,
+  body.remlock #infoov, body.remlock #qrov { display:none !important; }
   body.hidebar #bar { display:none; }
   body.noctl #ctl { display:none; }
   /* gruppo stile testo: caratteri +50% e pulsanti piu' grandi */
@@ -1151,12 +1159,12 @@ PAGE = r"""<!DOCTYPE html>
   /* striscia in alto quando la barra e' chiusa (o non abilitata) e quando lo schermo e' bloccato */
   #strip { display:none; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 8px; background:#222;
            border-bottom:1px solid #444; position:relative; z-index:7; }
-  body.hidebar #strip, body.nobar #strip, body.locked #strip { display:flex; }
+  body.hidebar #strip, body.locked #strip { display:flex; }
   #strip button { min-height:44px; padding:6px 8px; border-radius:22px; border:2px solid var(--c); background:transparent;
                   color:var(--c); font:600 14px Arial, sans-serif; cursor:pointer; white-space:nowrap; flex:1 1 auto; }
   #strip button.on { background:var(--c); color:#fff; }
   #sbar { --c:#c8a23a; } #sfull { --c:#12a8a8; } #sctl { --c:#1fae62; } #slock { --c:#ff5a5a; }
-  body.nobar #sbar { display:none; } body.nostripctl #sctl { display:none; }
+  body.nostripctl #sctl { display:none; }
   #sunlock { display:none; --c:#ff5a5a; position:relative; overflow:hidden; flex:1; user-select:none;
              -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
   #sunlock .prog { position:absolute; left:0; top:0; bottom:0; width:0; background:rgba(255,90,90,.55); }
@@ -1174,7 +1182,7 @@ PAGE = r"""<!DOCTYPE html>
 <div id="strip">
   <button id="sbar" title="Riapri la barra">&#9776; Barra</button>
   <button id="sfull" title="Schermo intero">&#9974; Schermo</button>
-  <button id="sctl" class="on" title="Mostra/nascondi Avanti e Indietro">&#9664;&#9654; Comandi</button>
+  <button id="sctl" class="on" title="Mostra/nascondi Navigazione e Vai alla slide">&#9664;&#9654; Navigazione</button>
   <button id="slock" title="Blocca lo schermo">&#128274; Blocca</button>
   <button id="sunlock" title="Tieni premuto 5 secondi per sbloccare"><span class="prog"></span><span>&#128275; Tieni premuto 5 secondi per sbloccare</span></button>
 </div>
@@ -1211,7 +1219,7 @@ PAGE = r"""<!DOCTYPE html>
   <div class="sec">Cosa mostrare</div>
   <div class="chips">
     <button id="styleb" class="tg c-style" title="Mostra/nascondi i comandi del testo">Stile testo</button>
-    <button id="ctlb" class="tg c-ctl" title="Mostra/nascondi i pulsanti per avanzare le slide">Comandi slide</button>
+    <button id="ctlb" class="tg c-ctl" title="Mostra/nascondi Navigazione e Vai alla slide">Navigazione</button>
     <button id="curb" class="tg c-cur" title="Mostra/nascondi la slide in onda">Slide in onda</button>
     <button id="nextb" class="tg c-next" title="Mostra/nascondi la slide successiva">Slide successiva</button>
   </div>
@@ -1298,8 +1306,12 @@ document.addEventListener("fullscreenchange", () => { $("sfull").classList.toggl
 apply();
 
 /* ---- stato, scelta presentazione ---- */
-let st = { shows: [], pin_required: false, control: true, ui: { bar: true, style: true, cur: true, next: true, goto: true, ctl: true } };
-const uiOn = k => !st.ui || st.ui[k] !== false;   // scelto dal PC nella pagina di avvio
+let st = { shows: [], pin_required: false, control: true, ui: { bar: true, style: true, cur: true, next: true, goto: true, ctl: true, lock: false } };
+const uiOn = k => !st.ui || st.ui[k] !== false;
+const remLock = () => !!(st.ui && st.ui.lock === true);   // "Blocca schermo Remoto": solo note, nessun comando
+// vista fissa: barra spenta dal PC o schermo remoto bloccato -> conta solo la scelta della pagina di gestione
+const fixedView = () => !uiOn("bar") || remLock();
+const eff = (k, dev) => uiOn(k) && (fixedView() || dev);   // elemento visibile: scelta del PC + scelta del telefono   // scelto dal PC nella pagina di avvio
 let selId = lsGet("pptSel", "");
 let lastKey = null, optKey = "";
 
@@ -1352,9 +1364,9 @@ function setSlide(img, ph, on, id, index, title, emptyText) {
 }
 function updateSlides(cur) {
   const wait = "In attesa della presentazione…";
-  setSlide($("imgcur"), $("phcur"), curOn && uiOn("cur"), cur ? cur.id : "", cur ? cur.index : 0, cur ? cur.title : "", wait);
+  setSlide($("imgcur"), $("phcur"), eff("cur", curOn), cur ? cur.id : "", cur ? cur.index : 0, cur ? cur.title : "", wait);
   const hasNext = !!cur && cur.index < cur.total;
-  setSlide($("imgnext"), $("phnext"), nextOn && uiOn("next"), hasNext ? cur.id : "", hasNext ? cur.index + 1 : 0,
+  setSlide($("imgnext"), $("phnext"), eff("next", nextOn), hasNext ? cur.id : "", hasNext ? cur.index + 1 : 0,
            cur ? cur.title : "", cur ? "Ultima slide" : wait);
 }
 ["imgcur", "imgnext"].forEach(id => {
@@ -1403,7 +1415,7 @@ $("prev").onclick = () => sendCmd("prev");
 $("go").onclick = () => { const n = parseInt($("gonum").value); if (n > 0) sendCmd("goto", n); };
 $("gonum").addEventListener("keydown", e => { if (e.key === "Enter") $("go").click(); });
 document.addEventListener("keydown", e => {
-  if (!ctlOn || !uiOn("ctl") || st.control === false || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (!navOn() || e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (["ArrowRight","ArrowDown","PageDown"," "].includes(e.key)) { e.preventDefault(); sendCmd("next"); }
   else if (["ArrowLeft","ArrowUp","PageUp"].includes(e.key)) { e.preventDefault(); sendCmd("prev"); }
 });
@@ -1412,19 +1424,25 @@ let styleOn = lsGet("pptStyle", "1") === "1";
 let ctlOn = lsGet("pptCtl", "1") === "1";
 let curOn = lsGet("pptCur", "1") === "1";
 let nextOn = lsGet("pptNext", "1") === "1";
+function navOn() { return st.control !== false && !remLock() && uiOn("ctl") && eff("ctl", ctlOn); }
+function gotoOn() { return st.control !== false && uiOn("goto") && !remLock() && (fixedView() || ctlOn); }
 function applyCtl() {
-  const allowed = st.control !== false && uiOn("ctl");
   const b = document.body.classList;
-  b.toggle("nostyle", !styleOn || !uiOn("style"));
-  b.toggle("noctl", !ctlOn || !allowed);
+  const nav = navOn(), go = gotoOn(), allowed = st.control !== false && uiOn("ctl");
+  b.toggle("remlock", remLock());
   b.toggle("nobar", !uiOn("bar"));
-  b.toggle("nogoto", !uiOn("goto"));
-  b.toggle("nostripctl", !allowed);
+  if (!uiOn("bar")) b.remove("hidebar");
+  b.toggle("nostyle", remLock() || !eff("style", styleOn));
+  b.toggle("nonav", !nav);
+  b.toggle("nogoto", !go);
+  b.toggle("noctl", !nav && !go);
+  b.toggle("nostripctl", !allowed && !(st.control !== false && uiOn("goto")));
   $("sctl").classList.toggle("on", ctlOn);
-  b.toggle("showcur", curOn && uiOn("cur"));
-  b.toggle("shownext", nextOn && uiOn("next"));
+  b.toggle("showcur", eff("cur", curOn));
+  b.toggle("shownext", eff("next", nextOn));
+  const navAvail = st.control !== false && (uiOn("ctl") || uiOn("goto"));
   $("styleb").style.display = uiOn("style") ? "" : "none";
-  $("ctlb").style.display = allowed ? "" : "none";
+  $("ctlb").style.display = navAvail ? "" : "none";
   $("curb").style.display = uiOn("cur") ? "" : "none";
   $("nextb").style.display = uiOn("next") ? "" : "none";
   $("styleb").classList.toggle("on", styleOn);
@@ -1577,7 +1595,7 @@ def main():
     except Exception as e:
         print(" (QR in console non disponibile: %s)" % e)
     print()
-    print(" Pagina di avvio (QR e scelta di cosa mostrare sui telefoni): http://localhost:%d/start" % port)
+    print(" Pagina di gestione (QR, scheda di rete e scelta di cosa mostrare sui telefoni): http://localhost:%d/start" % port)
     if not CONTROL:
         print(" Comandi avanti/indietro: DISABILITATI")
     elif PIN:
