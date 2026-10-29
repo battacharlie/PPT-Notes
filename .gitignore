@@ -6,3 +6,4 @@ dist/
 windows/reMNote.exe
 windows/_buildinfo.py
 windows/version_info.txt
+reMNote.log

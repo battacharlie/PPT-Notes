@@ -27,8 +27,23 @@ class FakeApp:
     def Count(self): return len(self._w)
     def __call__(self, i): return self._w[i-1]
 
-w1 = FakeWin(111, 5); w2 = FakeWin(222, 3, fail_on=2)
-app = FakeApp([w1, w2])
+class FailAllSlides(FakeSlides):
+    def __call__(self, i):
+        class S:
+            def Export(self_, path, fmt, w, h): raise RuntimeError("Slide.Export non consentito")
+        return S()
+class FakeWinView(FakeWin):
+    """Export dalla presentazione fallisce; dalla finestra di presentazione (slide in onda = 1) riesce."""
+    def __init__(self, hwnd, n):
+        FakeWin.__init__(self, hwnd, n); self.Presentation.Slides = FailAllSlides(n)
+        class V:
+            CurrentShowPosition = 1
+            class Slide:
+                @staticmethod
+                def Export(path, fmt, w, h): open(path, "wb").write(b"\x89PNG-da-finestra")
+        self.View = V
+w1 = FakeWin(111, 5); w2 = FakeWin(222, 3, fail_on=2); w3 = FakeWinView(333, 4)
+app = FakeApp([w1, w2, w3])
 m.DEMO_MODE = False
 srv = m.ThreadingHTTPServer(("127.0.0.1", 8087), m.Handler); srv.daemon_threads = True
 threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -58,8 +73,12 @@ st, _, _, body2 = get("/slide/111/2.png")
 check("seconda richiesta dalla cache (nessun nuovo Export)", st == 200 and body2 == body and len(w1.Presentation.Slides.exports) == 1)
 st, *_ = get("/slide/111/9.png");   check("slide fuori intervallo -> 404", st == 404)
 st, *_ = get("/slide/999/1.png");   check("presentazione sconosciuta -> 404", st == 404)
-t = time.time(); st, *_ = get("/slide/222/2.png")
+t = time.time(); st, _, _, err = get("/slide/222/2.png")
 check("Export che fallisce -> 404 senza bloccare (%.1fs)" % (time.time()-t), st == 404 and time.time()-t < 3)
+check("il motivo dell'errore arriva alla pagina", b"export fallito" in err and b"esportazione fallita" in err)
+st, _, _, b9 = get("/slide/333/1.png"); check("secondo tentativo dalla finestra di presentazione (slide in onda)", st == 200 and b9 == b"\x89PNG-da-finestra")
+st, _, _, e9 = get("/slide/333/2.png"); check("slide non in onda: errore spiegato", st == 404 and b"Slide.Export non consentito" in e9)
+st, _, _, e8 = get("/slide/111/9.png"); check("fuori intervallo: messaggio chiaro", st == 404 and b"fuori intervallo (1-5)" in e8)
 st, _, _, b3 = get("/slide/222/1.png"); check("altra presentazione funziona dopo l'errore", st == 200 and b"slide-1" in b3)
 files = [f for f in os.listdir(__import__("tempfile").gettempdir()) if f.startswith("reMNote_")]
 check("nessun file temporaneo rimasto", files == [])

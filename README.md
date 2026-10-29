@@ -25,6 +25,8 @@ Avvia `reMNote.exe` sul PC dove gira PowerPoint e inquadra il QR con lo smartpho
 Se compare "Windows ha protetto il PC": *Ulteriori informazioni → Esegui comunque*.
 Alla prima esecuzione Windows chiede l'accesso alla rete: consenti le *Reti private*.
 
+Se un'anteprima di slide non compare, al suo posto la pagina scrive il motivo; gli errori sono anche nel file `reMNote.log`, accanto a `reMNote.exe`.
+
 Opzioni: `--port 8080`, `--pin 1234`, `--no-control`, `--no-browser`, `--demo` (prova senza PowerPoint).
 
 ## Sviluppo
