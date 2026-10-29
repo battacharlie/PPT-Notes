@@ -1,6 +1,6 @@
-# DeckWhisperer
+# MEFISTOFELE DeckWhisperer
 
-**Remote presenter notes & presentation control**
+**Remote notes & control for PowerPoint**
 
 🇬🇧 Reads the **speaker notes** from PowerPoint while the slide show is running and shows them in real time on a web page
 you open on your phone (QR code), with text-style controls, next/previous slide buttons and current/next slide previews.
@@ -17,11 +17,10 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 **Releases** → `DeckWhisperer.exe` (Windows 10/11 + PowerPoint). Ogni release contiene anche `SHA256SUMS.txt`, `INSTRUCTIONS.md` e `ISTRUZIONI.md`.
 Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente, in fondo **DeckWhisperer-windows**.
 
-## Novità della 2.1 / What's new in 2.1
-- Nuovo nome e nuovo logo ovunque (icona del file `.exe`, finestra del programma, pagina web) / New name and logo everywhere (exe icon, program window, web page).
-- Pannello di avvio con caselle per la **barra dei comandi** e la **modalità tutto schermo** sui telefoni / Start panel with options for the **control bar** and **full-screen mode** on phones.
-- Pagina del telefono con pulsanti **colorati**, più grandi e facili da usare / Phone page with **colour-coded**, bigger buttons.
-- Istruzioni in italiano e inglese / Instructions in Italian and English.
+## Novità della 3.0 / What's new in 3.0
+- Nome **MEFISTOFELE DeckWhisperer** · sottotitolo *Remote notes & control for PowerPoint*.
+- Pannello di avvio: scelta della **scheda di rete** del QR, flag riordinati, nuovo flag **Vai direttamente alla slide**, pulsante **Guida** / Start panel: **network adapter** for the QR, reordered flags, new **Go to slide** flag, **Guide** button.
+- Telefono: **niente standby**, comandi stile **+50%**, dimensione con campo numerico e **a− / A+**, **striscia in alto** con Barra / Schermo / Comandi / **lucchetto** (sblocco tenendo premuto 5 secondi) / Phone: **no screen sleep**, **+50%** style controls, size box with **a− / A+**, **top strip** with a **screen lock** (hold 5 seconds to unlock).
 
 ## Sviluppo / Development
 - Sorgente: `windows/deckwhisperer.py` (Python + pywin32 + qrcode). Icone in `windows/assets/` (generate da `tools/make_icons.py` a partire da `deckwhisperer-logo.png`).

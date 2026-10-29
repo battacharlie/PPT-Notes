@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-DeckWhisperer - Remote presenter notes & presentation control
+DeckWhisperer - Remote notes & control for PowerPoint
 Legge le note del relatore da PowerPoint (in presentazione) e le pubblica su una
 pagina web raggiungibile dalla rete locale, in tempo reale.
 
@@ -34,7 +34,8 @@ from html import escape as html_escape
 from xml.sax.saxutils import escape
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-APP_NAME = "DeckWhisperer"
+APP_NAME = "MEFISTOFELE DeckWhisperer"
+APP_SUBTITLE = "Remote notes & control for PowerPoint"
 try:
     from _buildinfo import APP_VERSION  # scritto dalla compilazione (tools/buildinfo.py)
 except Exception:
@@ -61,15 +62,17 @@ def resource_path(*parts):
 
 
 CREDITS_HTML = (
-    '<b>DeckWhisperer</b> – Remote presenter notes &amp; presentation control<br>Ideato e sviluppato da '
+    '<b>MEFISTOFELE DeckWhisperer</b> – Remote notes &amp; control for PowerPoint<br>Ideato e sviluppato da '
     '<a href="https://www.andreabattaglioli.it" target="_blank" rel="noopener">www.andreabattaglioli.it</a> · '
     '<a class="mwtl" href="https://www.mywebtvlive.com" target="_blank" rel="noopener">'
     '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
 )
 
-UI_KEYS = ("style", "ctl", "cur", "next", "bar", "full")
-# stile testo, comandi avanzamento, slide in onda, slide successiva, barra comandi in alto, tutto schermo
-UI = {k: (k != "full") for k in UI_KEYS}   # tutto acceso, tranne il tutto schermo automatico              # cosa possono vedere i telefoni (scelto dal PC)
+UI_KEYS = ("bar", "style", "cur", "next", "goto", "ctl")
+# barra in alto, stile testo, slide in onda, slide successiva, "vai alla slide", avanti/indietro
+UI = {k: True for k in UI_KEYS}              # cosa possono vedere i telefoni (scelto dal PC)
+NIC_IP = ""                                  # scheda di rete scelta per il QR ("" = automatica)
+PORT = 8080              # cosa possono vedere i telefoni (scelto dal PC)
 NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
 SETTINGS_LOCK = threading.Lock()
 STATE = {"pin_required": False, "control": True, "ui": dict(UI), "shows": []}
@@ -100,6 +103,7 @@ def ui_state():
     """Cosa mostrare sui telefoni: la scelta fatta dal PC, con i comandi spenti se serve."""
     ui = dict(UI)
     ui["ctl"] = bool(UI["ctl"]) and not NO_CONTROL
+    ui["goto"] = bool(UI["goto"]) and not NO_CONTROL
     return ui
 
 
@@ -110,6 +114,40 @@ def refresh_state():
     with COND:
         shows = list(STATE.get("shows", []))
     set_state(shows)
+
+
+def list_nics():
+    """Schede di rete con un indirizzo IPv4 utilizzabile: [{'name':..., 'ip':...}]."""
+    out, seen = [], set()
+    try:
+        import psutil
+        stats = psutil.net_if_stats()
+        for name, addrs in psutil.net_if_addrs().items():
+            st = stats.get(name)
+            if st is not None and not st.isup:
+                continue
+            for a in addrs:
+                ip = a.address
+                if a.family == socket.AF_INET and not ip.startswith(("127.", "169.254.")) and ip not in seen:
+                    seen.add(ip)
+                    out.append({"name": str(name), "ip": ip})
+    except Exception:
+        pass
+    if not out:
+        out = [{"name": "Scheda di rete", "ip": ip} for ip in local_ips()]
+    return out
+
+
+def current_ip():
+    """IP scritto nel QR: la scheda scelta dal PC, se c'e' ancora, altrimenti quella automatica."""
+    if NIC_IP and any(n["ip"] == NIC_IP for n in list_nics()):
+        return NIC_IP
+    return primary_ip()
+
+
+def update_base_url():
+    global BASE_URL
+    BASE_URL = "http://%s:%d/" % (current_ip(), PORT)
 
 
 def settings_paths(name="DeckWhisperer.json"):
@@ -125,16 +163,19 @@ def load_settings():
                 data = json.load(f)
         except Exception:
             continue
+        global NIC_IP
         ui = data.get("ui", {})
         for k in UI_KEYS:
             if isinstance(ui.get(k), bool):
                 UI[k] = ui[k]
+        if isinstance(data.get("nic"), str):
+            NIC_IP = data["nic"][:45]
         return str(data.get("pin", ""))[:20]
     return ""
 
 
 def save_settings():
-    data = json.dumps({"ui": UI, "pin": PIN}, ensure_ascii=False, indent=1)
+    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP}, ensure_ascii=False, indent=1)
     for pth in settings_paths():
         try:
             with open(pth, "w", encoding="utf-8") as f:
@@ -148,19 +189,24 @@ def save_settings():
 
 def apply_settings(body):
     """Applica le scelte arrivate dalla pagina di avvio. Ritorna False se non valide."""
-    global PIN
+    global PIN, NIC_IP
     ui = body.get("ui")
     if not isinstance(ui, dict) or any(k in ui and not isinstance(ui[k], bool) for k in UI_KEYS):
         return False
     pin = str(body.get("pin", PIN))
     if len(pin) > 20 or any(c in pin for c in "\r\n\t"):
         return False
+    nic = body.get("nic", NIC_IP)
+    if not isinstance(nic, str) or (nic and nic not in [n["ip"] for n in list_nics()]):
+        return False
     with SETTINGS_LOCK:
         for k in UI_KEYS:
             if k in ui:
                 UI[k] = ui[k]
         PIN = pin.strip()
+        NIC_IP = nic
         save_settings()
+    update_base_url()
     refresh_state()
     return True
 
@@ -312,12 +358,12 @@ def diagnostica_page():
 
 
 DIAG_PAGE = r"""<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>DeckWhisperer - diagnostica</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>MEFISTOFELE DeckWhisperer - diagnostica</title>
 <link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
 <style>body{font:14px Arial,sans-serif;margin:16px;background:#fff;color:#111}
 pre{background:#f3f3f3;padding:10px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
 button{font:15px Arial,sans-serif;padding:8px 14px;margin:4px 6px 4px 0;cursor:pointer}</style></head>
-<body><h2>DeckWhisperer - diagnostica</h2>
+<body><h2>MEFISTOFELE DeckWhisperer - diagnostica</h2>
 <pre id="info">__INFO__</pre>
 <p><button id="prova">Prova le anteprime ora</button><button id="copia">Copia tutto</button></p>
 <pre id="out">Premi "Prova le anteprime ora" con una presentazione in corso.</pre>
@@ -617,20 +663,23 @@ def qr_console(text):
 
 
 START_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>DeckWhisperer - avvio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - avvio</title>
 <link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
 <style>
 :root{--bg:#f4f6f7;--card:#fff;--ink:#14262b;--mut:#5b6b70;--acc:#14434d;--ok:#1b7f4a;--bd:#d9e0e2}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Arial,sans-serif}
 .wrap{max-width:980px;margin:0 auto;padding:20px 16px 28px}
-header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
-header img{width:64px;height:64px}h1{font-size:26px;margin:0}header small{color:var(--mut);display:block;margin-top:2px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+header img{width:64px;height:64px}h1{font-size:26px;margin:0;letter-spacing:.02em}header small{color:var(--mut);display:block;margin-top:2px}
+.guide{margin-left:auto;font-size:16px;padding:10px 18px;text-decoration:none;background:var(--acc);color:#fff;border-radius:8px}
 .grid{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:18px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px}
 .card h2{font-size:17px;margin:0 0 12px}
 .qr{text-align:center}.qr img{width:100%;max-width:320px;height:auto}
 .url{font-size:20px;font-weight:700;word-break:break-all;margin:8px 0 2px}.hint{color:var(--mut);font-size:14px}
+.nic{margin-top:14px;text-align:left}.nic label{font-weight:700;font-size:14px;display:block;margin-bottom:5px}
+.nic select{width:100%;font-size:15px;padding:8px;border:1px solid var(--bd);border-radius:8px;background:#fff}
 .opt{display:flex;gap:12px;align-items:flex-start;padding:11px 4px;border-bottom:1px solid var(--bd);cursor:pointer}
 .opt:last-of-type{border-bottom:0}.opt input{width:22px;height:22px;margin-top:2px;accent-color:var(--acc);flex:none}
 .opt b{display:block;font-size:16px}.opt span{color:var(--mut);font-size:14px}
@@ -642,18 +691,21 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 .cr{font-size:13px;color:var(--mut);line-height:1.6;text-align:center;margin-top:22px}.cr a{color:var(--acc)}
 .cr img{vertical-align:middle;margin-right:4px}.links{margin-top:10px;font-size:14px}.links a{color:var(--acc)}
 </style></head><body><div class="wrap">
-<header><img src="/static/deckwhisperer-192.png" alt="DeckWhisperer"><div><h1>DeckWhisperer</h1>
-<small>Versione __VERSION__ &middot; Remote presenter notes &amp; presentation control</small></div></header>
+<header><img src="/static/deckwhisperer-192.png" alt="__NAME__"><div><h1>__NAME__</h1>
+<small>Versione __VERSION__ &middot; Remote notes &amp; control for PowerPoint</small></div>
+<a class="guide" href="/guida" target="_blank">&#128214; Guida</a></header>
 <div class="grid">
-<div class="card qr"><h2>1. Inquadra il QR</h2><img src="/qr.svg" alt="QR">
-<div class="url">__URL__</div><div class="hint">Telefono collegato alla stessa rete Wi-Fi del PC</div></div>
+<div class="card qr"><h2>1. Inquadra il QR</h2><img id="qrimg" src="/qr.svg" alt="QR">
+<div class="url" id="url">__URL__</div><div class="hint">Telefono collegato alla stessa rete Wi-Fi del PC</div>
+<div class="nic"><label for="nic">Scheda di rete del QR</label><select id="nic"></select>
+<div class="hint" style="margin-top:5px">Scegli la scheda a cui sono collegati i telefoni (es. quella della rete di produzione).</div></div></div>
 <div class="card"><h2>2. Cosa vuoi far vedere sui telefoni</h2>
-<label class="opt"><input type="checkbox" id="u_style"><div><b>Stile del testo</b><span>Font, dimensione, colori, interlinea e spaziatura</span></div></label>
-<label class="opt"><input type="checkbox" id="u_ctl"><div><b>Comandi slide</b><span>Avanti, indietro e vai a slide</span></div></label>
+<label class="opt"><input type="checkbox" id="u_bar"><div><b>Barra dei comandi in alto</b><span>Pulsanti colorati, QR, info. Spenta: restano note, scelta presentazione e la striscia con lucchetto</span></div></label>
+<label class="opt"><input type="checkbox" id="u_style"><div><b>Comandi stile testo</b><span>Font, dimensione, colori, interlinea e spaziatura</span></div></label>
 <label class="opt"><input type="checkbox" id="u_cur"><div><b>Slide in onda</b><span>Immagine della slide che il pubblico sta vedendo</span></div></label>
 <label class="opt"><input type="checkbox" id="u_next"><div><b>Slide successiva</b><span>Immagine della slide che arriva dopo</span></div></label>
-<label class="opt"><input type="checkbox" id="u_bar"><div><b>Barra dei comandi in alto</b><span>Pulsanti colorati, stile, QR, info. Spenta: restano solo note e scelta presentazione</span></div></label>
-<label class="opt"><input type="checkbox" id="u_full"><div><b>Modalità tutto schermo</b><span>Sui telefoni compare il pulsante e, al primo tocco, la pagina va a tutto schermo (non su iPhone)</span></div></label>
+<label class="opt"><input type="checkbox" id="u_goto"><div><b>Vai direttamente alla slide</b><span>Campo numero e pulsante Vai per saltare a una slide</span></div></label>
+<label class="opt"><input type="checkbox" id="u_ctl"><div><b>Avanti / Indietro</b><span>Pulsanti per far avanzare e tornare indietro le slide</span></div></label>
 <div class="pin"><label for="pin"><b>PIN per i comandi</b> (facoltativo)</label>
 <input id="pin" maxlength="20" inputmode="numeric" autocomplete="off" placeholder="nessuno"><button id="savepin">Salva PIN</button></div>
 <div id="saved"></div>
@@ -662,26 +714,40 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 </div></div>
 <div class="cr">__CREDITS__</div></div>
 <script>
-const $ = id => document.getElementById(id), K = ["style","ctl","cur","next","bar","full"];
+const $ = id => document.getElementById(id), K = ["bar","style","cur","next","goto","ctl"];
 let timer = null;
 function flash(t){ $("saved").textContent = t; clearTimeout(timer); timer = setTimeout(() => { $("saved").textContent = ""; }, 2500); }
 async function save(){
   const ui = {}; K.forEach(k => { ui[k] = $("u_" + k).checked; });
   try {
     const r = await fetch("/settings", { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim() }) });
+      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value }) });
     flash(r.ok ? "Salvato: i telefoni collegati si aggiornano subito" : "Impostazioni non valide");
+    if (r.ok) load(false);
   } catch(e) { flash("Programma non raggiungibile"); }
 }
+function load(first){
+  fetch("/settings.json").then(r => r.json()).then(d => {
+    if (first) {
+      K.forEach(k => { $("u_" + k).checked = d.ui[k] !== false; });
+      $("pin").value = d.pin || "";
+      const sel = $("nic"); sel.innerHTML = "";
+      const auto = document.createElement("option"); auto.value = "";
+      auto.textContent = "Automatica (consigliata)" + (d.auto_ip ? " - " + d.auto_ip : ""); sel.appendChild(auto);
+      d.nics.forEach(n => { const o = document.createElement("option"); o.value = n.ip; o.textContent = n.name + " - " + n.ip; sel.appendChild(o); });
+      sel.value = d.nic || "";
+      if (sel.value !== (d.nic || "")) sel.value = "";
+      $("u_ctl").disabled = !!d.no_control; $("u_goto").disabled = !!d.no_control;
+      if (d.no_control) $("u_ctl").parentNode.querySelector("span").textContent = "Disattivati: il programma è stato avviato con --no-control";
+    }
+    $("url").textContent = d.url; $("qrimg").src = "/qr.svg?t=" + Date.now();
+  }).catch(() => flash("Programma non raggiungibile"));
+}
 K.forEach(k => { $("u_" + k).onchange = save; });
+$("nic").onchange = save;
 $("savepin").onclick = save;
 $("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
-fetch("/settings.json").then(r => r.json()).then(d => {
-  K.forEach(k => { $("u_" + k).checked = k === "full" ? d.ui[k] === true : d.ui[k] !== false; });
-  $("u_ctl").disabled = !!d.no_control;
-  if (d.no_control) $("u_ctl").parentNode.querySelector("span").textContent = "Disattivati: il programma è stato avviato con --no-control";
-  $("pin").value = d.pin || "";
-}).catch(() => flash("Programma non raggiungibile"));
+load(true);
 function shows(){
   fetch("/state").then(r => r.json()).then(s => {
     const ul = $("shows"); ul.innerHTML = "";
@@ -691,6 +757,109 @@ function shows(){
 }
 shows(); setInterval(shows, 2000);
 </script></body></html>"""
+
+
+GUIDE_FILES = {"it": "ISTRUZIONI.md", "en": "INSTRUCTIONS.md"}
+
+
+def guide_path(lang):
+    name = GUIDE_FILES.get(lang, GUIDE_FILES["it"])
+    for cand in (resource_path("docs", name), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", name)):
+        if os.path.exists(cand):
+            return cand
+    return ""
+
+
+def _inline(t):
+    t = html_escape(t, quote=False)
+    t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+    t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
+    t = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", t)
+
+    def link(m):
+        url = m.group(2)
+        if url.endswith("INSTRUCTIONS.md"):
+            url = "/guida?lang=en"
+        elif url.endswith("ISTRUZIONI.md"):
+            url = "/guida?lang=it"
+        if not url.startswith(("http://", "https://", "/")):
+            return m.group(1)
+        return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (url, m.group(1))
+    return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", link, t)
+
+
+def md_to_html(md):
+    """Converte il Markdown delle guide (titoli, elenchi, tabelle, grassetto, codice, link) in HTML."""
+    out, para, items, rows = [], [], [], []
+
+    def flush():
+        nonlocal para, items, rows
+        if para:
+            out.append("<p>%s</p>" % _inline(" ".join(para)))
+        if items:
+            tag = "ol" if items[0][0] else "ul"
+            out.append("<%s>%s</%s>" % (tag, "".join("<li>%s</li>" % _inline(t) for _, t in items), tag))
+        if rows:
+            head, body = rows[0], rows[2:]
+            out.append("<table><tr>%s</tr>%s</table>" % (
+                "".join("<th>%s</th>" % _inline(c) for c in head),
+                "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _inline(c) for c in r) for r in body)))
+        para, items, rows = [], [], []
+
+    for line in md.splitlines():
+        st = line.strip()
+        if not st:
+            flush()
+        elif st.startswith("#"):
+            flush()
+            n = len(st) - len(st.lstrip("#"))
+            out.append("<h%d>%s</h%d>" % (n, _inline(st[n:].strip()), n))
+        elif st == "---":
+            flush()
+            out.append("<hr>")
+        elif st.startswith("|"):
+            if para or items:
+                flush()
+            rows.append([c.strip() for c in st.strip("|").split("|")])
+        elif re.match(r"^(\d+\.|-)\s+", st):
+            if para or rows:
+                flush()
+            items.append((st[0].isdigit(), re.sub(r"^(\d+\.|-)\s+", "", st)))
+        elif items and line.startswith(" "):      # riga di continuazione di una voce dell'elenco
+            items[-1] = (items[-1][0], items[-1][1] + " " + st)
+        else:
+            if items or rows:
+                flush()
+            para.append(st)
+    flush()
+    return "\n".join(out)
+
+
+GUIDE_PAGE = """<!DOCTYPE html><html lang="__LANG__"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - __TITLE__</title>
+<link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
+<style>body{margin:0;background:#f4f6f7;color:#14262b;font:16px/1.6 Segoe UI,Arial,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:18px 16px 40px;background:#fff;min-height:100vh}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #d9e0e2;padding-bottom:10px;margin-bottom:6px}
+.top img{width:44px;height:44px}.top a{margin-left:auto}.sw a{margin-left:10px;font-weight:700}
+h1{font-size:26px}h2{font-size:21px;margin-top:28px}h3{font-size:17px}
+table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #d9e0e2;padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#eef3f4}code{background:#eef3f4;padding:1px 5px;border-radius:4px}a{color:#14434d}</style></head><body><div class="wrap">
+<div class="top"><img src="/static/deckwhisperer-64.png" alt=""><b>__NAME__</b>
+<span class="sw"><a href="/guida?lang=it">Italiano</a><a href="/guida?lang=en">English</a></span></div>
+__BODY__</div></body></html>"""
+
+
+def guide_page(lang):
+    lang = lang if lang in GUIDE_FILES else "it"
+    pth = guide_path(lang)
+    if pth:
+        with open(pth, encoding="utf-8") as f:
+            body = md_to_html(f.read())
+    else:
+        body = "<p>Guida non trovata / Guide not found.</p>"
+    return (GUIDE_PAGE.replace("__LANG__", lang).replace("__NAME__", html_escape(APP_NAME))
+            .replace("__TITLE__", "Guida" if lang == "it" else "Guide").replace("__BODY__", body))
 
 
 # -------------------------------------------------------------------- Server
@@ -823,14 +992,19 @@ class Handler(BaseHTTPRequestHandler):
             if not self._is_local():
                 self._send(403, "text/plain; charset=utf-8", "Pagina di avvio: si apre solo dal PC dove gira DeckWhisperer".encode("utf-8"))
                 return
-            self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__URL__", BASE_URL)
+            self._send(200, "text/html; charset=utf-8", START_PAGE.replace("__URL__", BASE_URL).replace("__NAME__", html_escape(APP_NAME))
                        .replace("__VERSION__", APP_VERSION).replace("__CREDITS__", CREDITS_HTML).encode("utf-8"))
+        elif path == "/guida":
+            q = self.path.split("?", 1)[1] if "?" in self.path else ""
+            lang = "en" if "lang=en" in q else "it"
+            self._send(200, "text/html; charset=utf-8", guide_page(lang).encode("utf-8"))
         elif path == "/settings.json":
             if not self._is_local():
                 self._send(403, "text/plain; charset=utf-8", b"Solo dal PC")
                 return
             self._send(200, "application/json; charset=utf-8",
-                       json.dumps({"ui": UI, "pin": PIN, "no_control": NO_CONTROL, "url": BASE_URL}).encode("utf-8"))
+                       json.dumps({"ui": UI, "pin": PIN, "no_control": NO_CONTROL, "url": BASE_URL,
+                                   "nics": list_nics(), "nic": NIC_IP, "auto_ip": primary_ip()}).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))
@@ -890,7 +1064,7 @@ PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DeckWhisperer</title>
+<title>MEFISTOFELE DeckWhisperer</title>
 <link rel="icon" type="image/png" sizes="64x64" href="/static/deckwhisperer-64.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/deckwhisperer-32.png">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -923,6 +1097,7 @@ PAGE = r"""<!DOCTYPE html>
   #ctl .mid { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:120px; gap:4px; }
   #ctl .mid input { width:70px; font:16px Arial, sans-serif; text-align:center; }
   #ctl .mid button { font-size:14px; padding:4px 10px; }
+  #ctl .goto { display:flex; gap:6px; align-items:center; }
   #ctlmsg { color:#f88; font-size:12px; min-height:14px; }
   #infoov { display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:9;
             align-items:center; justify-content:center; padding:16px; }
@@ -954,7 +1129,7 @@ PAGE = r"""<!DOCTYPE html>
   #bar .tg.on::before { content:"\25CF\00a0"; }
   #bar .act { background:var(--c); color:#fff; }
   .c-style { --c:#a47bff; } .c-ctl { --c:#1fae62; } .c-cur { --c:#ff7a45; } .c-next { --c:#3b9cff; }
-  .c-full { --c:#12a8a8; } .c-qr { --c:#7d8b92; } .c-info { --c:#7d8b92; } .c-hide { --c:#c8a23a; }
+  .c-lock { --c:#e0534f; } .c-full { --c:#12a8a8; } .c-qr { --c:#7d8b92; } .c-info { --c:#7d8b92; } .c-hide { --c:#c8a23a; }
   .sec { font:700 11px Arial, sans-serif; letter-spacing:.08em; text-transform:uppercase; color:#9fb0b6; width:100%; }
   #ctl button { min-height:64px; }
   #prev { background:#d98a14 !important; border-color:#f2b24d !important; color:#1b1200 !important; }
@@ -965,11 +1140,45 @@ PAGE = r"""<!DOCTYPE html>
   body.nobar #showbar { display:none !important; }
   body.hidebar #bar { display:none; }
   body.noctl #ctl { display:none; }
-  #showbar { position:fixed; right:8px; top:8px; display:none; opacity:.4; }
-  body.hidebar #showbar { display:block; }
+  /* gruppo stile testo: caratteri +50% e pulsanti piu' grandi */
+  #bar .grp label { font-size:20px; }
+  #bar .grp select, #bar .grp input[type=number], #bar .grp button { font-size:20px; min-height:44px; }
+  #bar .grp input[type=number] { width:84px; }
+  #bar .grp input[type=color] { width:54px; height:40px; }
+  #bar .grp input[type=range] { width:130px; }
+  #bar .grp #lhv, #bar .grp #lsv { font-size:20px; }
+  #bar .grp #sizeDown, #bar .grp #sizeUp { min-width:58px; font-weight:700; }
+  /* striscia in alto quando la barra e' chiusa (o non abilitata) e quando lo schermo e' bloccato */
+  #strip { display:none; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 8px; background:#222;
+           border-bottom:1px solid #444; position:relative; z-index:7; }
+  body.hidebar #strip, body.nobar #strip, body.locked #strip { display:flex; }
+  #strip button { min-height:44px; padding:6px 8px; border-radius:22px; border:2px solid var(--c); background:transparent;
+                  color:var(--c); font:600 14px Arial, sans-serif; cursor:pointer; white-space:nowrap; flex:1 1 auto; }
+  #strip button.on { background:var(--c); color:#fff; }
+  #sbar { --c:#c8a23a; } #sfull { --c:#12a8a8; } #sctl { --c:#1fae62; } #slock { --c:#ff5a5a; }
+  body.nobar #sbar { display:none; } body.nostripctl #sctl { display:none; }
+  #sunlock { display:none; --c:#ff5a5a; position:relative; overflow:hidden; flex:1; user-select:none;
+             -webkit-user-select:none; -webkit-touch-callout:none; touch-action:none; }
+  #sunlock .prog { position:absolute; left:0; top:0; bottom:0; width:0; background:rgba(255,90,90,.55); }
+  #sunlock.holding .prog { width:100%; transition:width var(--hold,5s) linear; }
+  #sunlock span { position:relative; }
+  body.locked #sunlock { display:block; }
+  body.locked #strip > button:not(#sunlock) { display:none; }
+  body.locked #bar, body.locked #sbar { display:none; }
+  #lockov { display:none; position:fixed; left:0; right:0; top:58px; bottom:0; z-index:6; touch-action:none; background:transparent; }
+  body.locked #lockov { display:block; }
+  body.nogoto .goto { display:none; }
 </style>
 </head>
 <body>
+<div id="strip">
+  <button id="sbar" title="Riapri la barra">&#9776; Barra</button>
+  <button id="sfull" title="Schermo intero">&#9974; Schermo</button>
+  <button id="sctl" class="on" title="Mostra/nascondi Avanti e Indietro">&#9664;&#9654; Comandi</button>
+  <button id="slock" title="Blocca lo schermo">&#128274; Blocca</button>
+  <button id="sunlock" title="Tieni premuto 5 secondi per sbloccare"><span class="prog"></span><span>&#128275; Tieni premuto 5 secondi per sbloccare</span></button>
+</div>
+<div id="lockov"></div>
 <div id="bar">
   <label id="showlbl">Presentazione
     <select id="show"></select>
@@ -989,8 +1198,8 @@ PAGE = r"""<!DOCTYPE html>
     </select>
   </label>
   <label>Dimensione
-    <button id="sizeDown" title="Riduci">A-</button>
-    <input type="number" id="size" min="10" max="300" step="2">
+    <input type="number" id="size" min="10" max="300" step="2" inputmode="numeric">
+    <button id="sizeDown" title="Riduci">a&minus;</button>
     <button id="sizeUp" title="Aumenta">A+</button>
   </label>
   <label>Testo <input type="color" id="fg"></label>
@@ -1011,6 +1220,7 @@ PAGE = r"""<!DOCTYPE html>
     <button id="full" class="act c-full">Schermo intero</button>
     <button id="qrb" class="act c-qr">QR</button>
     <button id="infob" class="act c-info">Info</button>
+    <button id="lockb" class="act c-lock">&#128274; Blocca schermo</button>
     <button id="hide" class="act c-hide">Nascondi barra</button>
   </div>
   <div id="info"><span id="pos"></span><span id="dot" title="Presentazione"></span></div>
@@ -1024,12 +1234,11 @@ PAGE = r"""<!DOCTYPE html>
   <button id="prev" class="big">◀ Indietro</button>
   <div class="mid">
     <span id="ctlpos">–</span>
-    <span><input type="number" id="gonum" min="1" inputmode="numeric"> <button id="go">Vai</button></span>
+    <span class="goto"><input type="number" id="gonum" min="1" inputmode="numeric"> <button id="go">Vai</button></span>
     <span id="ctlmsg"></span>
   </div>
   <button id="next" class="big">Avanti ▶</button>
 </div>
-<button id="showbar">Barra</button>
 <div id="infoov">
   <div id="infobox">
     <img class="logo" src="/static/deckwhisperer-192.png" alt="DeckWhisperer">
@@ -1082,13 +1291,15 @@ $("qrb").onclick = () => { $("qrov").style.display = "flex"; };
 $("infob").onclick = () => { $("infoov").style.display = "flex"; };
 $("infoov").onclick = () => { $("infoov").style.display = "none"; };
 $("qrov").onclick = () => { $("qrov").style.display = "none"; };
-$("hide").onclick = () => document.body.classList.add("hidebar");
-$("showbar").onclick = () => document.body.classList.remove("hidebar");
+$("hide").onclick = () => { document.body.classList.add("hidebar"); applyCtl(); };
+$("sbar").onclick = () => { document.body.classList.remove("hidebar"); applyCtl(); };
+$("sfull").onclick = () => $("full").onclick();
+document.addEventListener("fullscreenchange", () => { $("sfull").classList.toggle("on", !!document.fullscreenElement); });
 apply();
 
 /* ---- stato, scelta presentazione ---- */
-let st = { shows: [], pin_required: false, control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: true, full: false } };
-const uiOn = k => k === "full" ? !!(st.ui && st.ui.full) : (!st.ui || st.ui[k] !== false);   // scelto dal PC nella pagina di avvio
+let st = { shows: [], pin_required: false, control: true, ui: { bar: true, style: true, cur: true, next: true, goto: true, ctl: true } };
+const uiOn = k => !st.ui || st.ui[k] !== false;   // scelto dal PC nella pagina di avvio
 let selId = lsGet("pptSel", "");
 let lastKey = null, optKey = "";
 
@@ -1207,7 +1418,9 @@ function applyCtl() {
   b.toggle("nostyle", !styleOn || !uiOn("style"));
   b.toggle("noctl", !ctlOn || !allowed);
   b.toggle("nobar", !uiOn("bar"));
-  $("full").style.display = uiOn("full") ? "" : "none";
+  b.toggle("nogoto", !uiOn("goto"));
+  b.toggle("nostripctl", !allowed);
+  $("sctl").classList.toggle("on", ctlOn);
   b.toggle("showcur", curOn && uiOn("cur"));
   b.toggle("shownext", nextOn && uiOn("next"));
   $("styleb").style.display = uiOn("style") ? "" : "none";
@@ -1224,17 +1437,10 @@ $("ctlb").onclick = () => { ctlOn = !ctlOn; lsSet("pptCtl", ctlOn ? "1" : "0"); 
 $("curb").onclick = () => { curOn = !curOn; lsSet("pptCur", curOn ? "1" : "0"); applyCtl(); render(); };
 $("nextb").onclick = () => { nextOn = !nextOn; lsSet("pptNext", nextOn ? "1" : "0"); applyCtl(); render(); };
 
-/* ---- tutto schermo: se il PC lo ha abilitato, al primo tocco la pagina passa a tutto schermo ---- */
-let fullTried = false;
-document.addEventListener("pointerdown", () => {
-  if (fullTried || !uiOn("full")) return;
-  fullTried = true;
-  if (!document.fullscreenElement && document.documentElement.requestFullscreen)
-    document.documentElement.requestFullscreen().catch(() => {});
-});
-
-/* ---- schermo sempre acceso (serve HTTPS o app; sul sito http della LAN molti browser lo negano) ---- */
-let wl = null;
+/* ---- schermo sempre acceso: Wake Lock (se il browser lo consente) + video silenzioso in loop (funziona anche su http) ---- */
+const NOSLEEP_WEBM = "data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAJKEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggEeTbuMU6uEHFO7a1OsggI07AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjAuMTYuMTAwV0GNTGF2ZjYwLjE2LjEwMESJiECPQAAAAAAAFlSua8GuAQAAAAAAADjXgQFzxYg9xTkZCNtYGJyBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhAvrwgDgibCBQLqBQJqBAhJUw2f8c3OgY8CAZ8iaRaOHRU5DT0RFUkSHjUxhdmY2MC4xNi4xMDBzc9ZjwItjxYg9xTkZCNtYGGfIoUWjh0VOQ09ERVJEh5RMYXZjNjAuMzEuMTAyIGxpYnZweGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDEuMDAwMDAwMDAwAB9DtnVAj+eBAKOqgQAAgPACAJ0BKkAAQAAARwiFhYiFhIgCAgAGcDxCYAqyIPcwAP7/q1CAo5aBAMgA0QEAARAQABgAGFgv9AAIjoAAo5aBAZAA0QEAARAQABgAGFgv9AAIjoAAo5aBAlgA0QEAARAQABgAGFgv9AAIjoAAo5aBAyAA0QEAARAQABgAGFgv9AAIjoAAHFO7a5G7j7OBALeK94EB8YIBn/CBAw==";
+const NOSLEEP_MP4 = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAM2bW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAmB0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAHYbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAAKABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABg21pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAUNzdGJsAAAAt3N0c2QAAAAAAAAAAQAAAKdhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAQABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALWF2Y0MBQsAK/+EAFmdCwAraEJsBEAAAAwAQAAADAKDxImoBAARozg/IAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAFcgAABXIAAAAGHN0dHMAAAAAAAAAAQAAAAUAAAgAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAUAAAABAAAAKHN0c3oAAAAAAAAAAAAAAAUAAAKRAAAACgAAAAoAAAAKAAAACgAAABRzdGNvAAAAAAAAAAEAAANmAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2MC4xNi4xMDAAAAAIZnJlZQAAAsFtZGF0AAACbwYF//9r3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTAgcmVmPTEgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MToweDExMSBtZT1oZXggc3VibWU9MiBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0wIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MCA4eDhkY3Q9MCBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0wIHRocmVhZHM9MiBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj01IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9MTAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAGmWIhAR///8PRQABKr8nJyddddddddddddeAAAAABkGaIBHwjAAAAAZBmkAR8IwAAAAGQZpgEPCMAAAABkGagD/CMA==";
+let wl = null, nsVideo = null;
 async function keepAwake() {
   try {
     if ("wakeLock" in navigator && !wl) {
@@ -1242,9 +1448,50 @@ async function keepAwake() {
       wl.addEventListener("release", () => { wl = null; });
     }
   } catch(e) { wl = null; }
+  try {
+    if (!nsVideo) {
+      nsVideo = document.createElement("video");
+      nsVideo.setAttribute("playsinline", ""); nsVideo.setAttribute("muted", "");
+      nsVideo.setAttribute("title", "DeckWhisperer"); nsVideo.muted = true; nsVideo.loop = true;
+      nsVideo.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:.01;pointer-events:none";
+      nsVideo.src = (nsVideo.canPlayType && nsVideo.canPlayType("video/webm")) ? NOSLEEP_WEBM : NOSLEEP_MP4;
+      if (document.body.appendChild) document.body.appendChild(nsVideo);
+    }
+    if (nsVideo.paused && nsVideo.play) { const pr = nsVideo.play(); if (pr && pr.catch) pr.catch(() => {}); }
+  } catch(e) {}
 }
+// i browser vogliono un tocco dell'utente per far partire il video: si riprova a ogni tocco finche' parte
+["pointerdown", "touchstart", "click"].forEach(t => document.addEventListener(t, () => { if (!nsVideo || nsVideo.paused) keepAwake(); }));
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 keepAwake();
+
+/* ---- blocco schermo: lucchetto, si sblocca tenendo premuto 5 secondi ---- */
+let LOCK_HOLD_MS = 5000, lockTimer = null;
+function setLocked(on) {
+  document.body.classList.toggle("locked", on);
+  if (on) { $("infoov").style.display = "none"; $("qrov").style.display = "none"; }
+  endHold();
+}
+function startHold(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  endHold();
+  $("sunlock").style.setProperty("--hold", (LOCK_HOLD_MS / 1000) + "s");
+  $("sunlock").classList.add("holding");
+  lockTimer = setTimeout(() => { lockTimer = null; setLocked(false); }, LOCK_HOLD_MS);
+}
+function endHold() {
+  if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; }
+  $("sunlock").classList.remove("holding");
+}
+$("slock").onclick = () => setLocked(true);
+$("lockb").onclick = () => setLocked(true);
+$("sunlock").onpointerdown = startHold;
+$("sunlock").onpointerup = endHold;
+$("sunlock").onpointerleave = endHold;
+$("sunlock").onpointercancel = endHold;
+$("sunlock").oncontextmenu = e => { if (e && e.preventDefault) e.preventDefault(); return false; };
+$("lockov").oncontextmenu = e => { if (e && e.preventDefault) e.preventDefault(); return false; };
+$("sctl").onclick = () => $("ctlb").onclick();
 
 /* ---- collegamento in tempo reale ---- */
 function connect() {
@@ -1261,7 +1508,7 @@ connect();
 
 
 def main():
-    global BASE_URL, PIN, CONTROL, DEMO_MODE, NO_CONTROL
+    global BASE_URL, PIN, CONTROL, DEMO_MODE, NO_CONTROL, PORT
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
@@ -1304,7 +1551,8 @@ def main():
         return
     srv.daemon_threads = True
 
-    BASE_URL = "http://%s:%d/" % (primary_ip(), port)
+    PORT = port
+    update_base_url()
     target = poll_demo if args.demo else poll_powerpoint
     threading.Thread(target=target, args=(args.interval,), daemon=True).start()
 
@@ -1314,7 +1562,7 @@ def main():
     except Exception:
         pass
     print("=" * 60)
-    print(" %s %s - Remote presenter notes & presentation control" % (APP_NAME, APP_VERSION))
+    print(" %s %s - Remote notes & control for PowerPoint" % (APP_NAME, APP_VERSION))
     print("=" * 60)
     print(" Indirizzo per smartphone e altri PC della rete:")
     print("   " + BASE_URL)

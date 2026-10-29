@@ -29,12 +29,12 @@ TEMPLATE = """VSVersionInfo(
     StringFileInfo([
       StringTable('040904B0', [
         StringStruct('CompanyName', 'www.andreabattaglioli.it'),
-        StringStruct('FileDescription', 'DeckWhisperer - Remote presenter notes & presentation control'),
+        StringStruct('FileDescription', 'MEFISTOFELE DeckWhisperer - Remote notes & control for PowerPoint'),
         StringStruct('FileVersion', '%(dotted)s'),
         StringStruct('InternalName', 'DeckWhisperer'),
         StringStruct('LegalCopyright', 'Andrea Battaglioli - www.andreabattaglioli.it - Powered by www.mywebtvlive.com'),
         StringStruct('OriginalFilename', 'DeckWhisperer.exe'),
-        StringStruct('ProductName', 'DeckWhisperer'),
+        StringStruct('ProductName', 'MEFISTOFELE DeckWhisperer'),
         StringStruct('ProductVersion', '%(dotted)s')
       ])
     ]),

@@ -1,11 +1,11 @@
-# DeckWhisperer – Istruzioni (italiano)
+# MEFISTOFELE DeckWhisperer – Istruzioni (italiano)
 
-**Remote presenter notes & presentation control**
+**Remote notes & control for PowerPoint**
 English version: [INSTRUCTIONS.md](INSTRUCTIONS.md)
 
-DeckWhisperer legge le **note del relatore** da PowerPoint mentre la presentazione è in corso e le mostra, in tempo reale,
+MEFISTOFELE DeckWhisperer legge le **note del relatore** da PowerPoint mentre la presentazione è in corso e le mostra, in tempo reale,
 su una pagina web raggiungibile dal telefono (o da qualsiasi dispositivo della stessa rete). Dal telefono si possono anche
-far avanzare le slide e vedere la slide in onda e quella successiva.
+far avanzare le slide, saltare a una slide e vedere la slide in onda e quella successiva.
 
 ## Cosa serve
 - Un PC **Windows 10/11** con **PowerPoint** installato (versione desktop).
@@ -21,18 +21,24 @@ far avanzare le slide e vedere la slide in onda e quella successiva.
 Il programma resta in una finestra nera: **chiudila per fermarlo**.
 
 ## La pagina di avvio (sul PC)
-Indirizzo: `http://localhost:8080/start` (si apre da sola). Qui scegli **cosa vedranno i telefoni**:
+Indirizzo: `http://localhost:8080/start` (si apre da sola). In alto a destra il pulsante **Guida** apre queste istruzioni.
+
+**Scheda di rete del QR.** Se il PC ha più schede di rete (per esempio Wi-Fi e rete di produzione), scegli dal menu
+**Scheda di rete del QR** quella a cui sono collegati i telefoni: il QR e l'indirizzo cambiano subito.
+*Automatica* lascia scegliere al programma.
+
+Poi scegli **cosa vedranno i telefoni**. Le caselle, in ordine:
 
 | Casella | Effetto sul telefono |
 |---|---|
-| Stile del testo | Font, dimensione, colori, interlinea, spaziatura |
-| Comandi slide | Pulsanti Avanti / Indietro / Vai a slide |
+| Barra dei comandi in alto | Mostra o nasconde tutta la barra dei pulsanti (restano note, scelta presentazione e la striscia con lucchetto) |
+| Comandi stile testo | Font, dimensione, colori, interlinea, spaziatura |
 | Slide in onda | Immagine della slide che il pubblico sta vedendo |
 | Slide successiva | Immagine della slide che arriva dopo |
-| Barra dei comandi in alto | Mostra o nasconde tutta la barra dei pulsanti (restano note e scelta presentazione) |
-| Modalità tutto schermo | Compare il pulsante *Schermo intero* e al primo tocco la pagina va a tutto schermo (non disponibile su iPhone) |
+| Vai direttamente alla slide | Campo numero e pulsante **Vai** per saltare a una slide |
+| Avanti / Indietro | Pulsanti grandi per far avanzare e tornare indietro le slide |
 
-Puoi anche impostare un **PIN** per i comandi: il telefono lo chiede alla prima pressione di Avanti/Indietro.
+Puoi anche impostare un **PIN** per i comandi: il telefono lo chiede alla prima pressione di Avanti/Indietro o di Vai.
 Le scelte si **salvano** (file `DeckWhisperer.json` accanto all'exe) e arrivano **subito** ai telefoni già collegati.
 La pagina di avvio si apre **solo dal PC** dove gira il programma.
 
@@ -45,9 +51,22 @@ Ogni funzione ha il suo colore. Il pulsante **pieno** = acceso, **con solo il bo
 | Verde | Comandi slide | Mostra/nasconde Avanti / Indietro |
 | Arancione | Slide in onda | Mostra/nasconde l'anteprima della slide in onda |
 | Blu | Slide successiva | Mostra/nasconde l'anteprima della slide successiva |
-| Turchese | Schermo intero | Entra/esce dal tutto schermo |
+| Turchese | Schermo intero | Entra/esce dal tutto schermo (non disponibile su iPhone) |
+| Rosso | Blocca schermo | Blocca il telefono contro i tocchi involontari |
 | Grigio | QR / Info | QR per collegare un altro telefono / versione e crediti |
-| Giallo | Nascondi barra | Nasconde la barra (si riapre col pulsante *Barra*) |
+| Giallo | Nascondi barra | Chiude la barra |
+
+**Dimensione del testo**: scrivi il numero nel campo oppure usa **a−** (più piccolo) e **A+** (più grande).
+
+**Striscia in alto.** Quando chiudi la barra resta una striscia con quattro pulsanti: **Barra** (la riapre),
+**Schermo** (tutto schermo sì/no), **Comandi** (mostra/nasconde Avanti e Indietro) e **Blocca**.
+
+**Blocco dello schermo.** Con il lucchetto lo schermo ignora ogni tocco (le note continuano ad aggiornarsi).
+Per **sbloccare tieni premuto 5 secondi** il pulsante rosso in alto: una barra si riempie e poi lo schermo si libera.
+Se lasci prima, resta bloccato.
+
+**Il telefono non va in standby** finché la pagina è aperta. Il primo tocco sulla pagina attiva la protezione;
+se il telefono si spegne lo stesso, controlla di non avere il *risparmio energetico* attivo.
 
 In basso: **Indietro** (arancione) e **Avanti** (verde) grandi, più il campo **Vai** per saltare a un numero di slide.
 Se ci sono più presentazioni aperte, scegli quale seguire dal menu **Presentazione**.
@@ -63,7 +82,7 @@ Ogni telefono ricorda le sue scelte (stile del testo, cosa mostrare).
 - `--demo` prova senza PowerPoint
 
 ## Se qualcosa non funziona
-- **Il telefono non si collega**: stessa rete? Firewall di Windows: consenti le *Reti private* (e pubbliche se il Wi-Fi è visto come pubblico).
+- **Il telefono non si collega**: stessa rete? Se il PC ha più schede, scegli quella giusta nella pagina di avvio. Firewall di Windows: consenti le *Reti private* (e pubbliche se il Wi-Fi è visto come pubblico).
 - **Le note non compaiono**: la presentazione deve essere **in esecuzione** (a schermo intero), non solo aperta.
 - **Le anteprime non compaiono**: apri `http://localhost:8080/diagnostica` sul PC, premi *Prova le anteprime ora* e *Copia tutto*.
 - Gli errori sono scritti anche in `DeckWhisperer.log`, accanto all'exe.

@@ -1,9 +1,9 @@
 const fs = require("fs"), vm = require("vm");
 const code = fs.readFileSync(process.argv[2], "utf8");
 function boot(seed) {
-const els = {}; const store = Object.assign({}, seed); let es = null; const docL = {}; let fsCalls = 0;
+const els = {}; const store = Object.assign({}, seed); let es = null; const docL = {}; let fsCalls = 0; const vids = [];
 function El(id) {
-  const e = { id, style: {}, attrs: {}, _cls: new Set(), textContent: "", value: "", options: [], className: "", max: 0 };
+  const e = { id, style: { setProperty() {} }, attrs: {}, _cls: new Set(), textContent: "", value: "", options: [], className: "", max: 0 };
   e.classList = { add: c => e._cls.add(c), remove: c => e._cls.delete(c), contains: c => e._cls.has(c),
     toggle: (c, f) => { if (f === undefined) f = !e._cls.has(c); f ? e._cls.add(c) : e._cls.delete(c); return f; } };
   e.setAttribute = (k, v) => { e.attrs[k] = v; }; e.getAttribute = k => (k in e.attrs ? e.attrs[k] : null);
@@ -16,13 +16,15 @@ const $ = id => els[id] || (els[id] = El(id));
 const body = El("body"), docEl = El("html"); docEl.style.setProperty = () => {};
 const sandbox = {
   document: { getElementById: $, body, documentElement: Object.assign(docEl, { requestFullscreen: () => { fsCalls++; return Promise.resolve(); } }),
-    createElement: () => El("opt"), addEventListener(t, f) { (docL[t] = docL[t] || []).push(f); }, fullscreenElement: null, visibilityState: "visible" },
+    createElement: tag => { const e = El(tag);
+      if (tag === "video") { e.played = 0; e.paused = true; e.canPlayType = () => "maybe"; e.play = () => { e.played++; e.paused = false; return Promise.resolve(); }; vids.push(e); }
+      return e; }, addEventListener(t, f) { (docL[t] = docL[t] || []).push(f); }, fullscreenElement: null, visibilityState: "visible" },
   navigator: {}, localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
   EventSource: function () { es = this; }, fetch: (u) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(globalThis.__errText || "") }),
   prompt: () => null, setTimeout, clearTimeout, console, encodeURIComponent, parseInt, parseFloat, Number, JSON, Math,
 };
 vm.createContext(sandbox); vm.runInContext(code, sandbox);
-return { $, body, store, sandbox, tap: () => (docL.pointerdown || []).forEach(f => f({})), fs: () => fsCalls, send: st => es.onmessage({ data: JSON.stringify(st) }) };
+return { $, body, store, sandbox, run: c => vm.runInContext(c, sandbox), vids: () => vids, tap: () => (docL.pointerdown || []).forEach(f => f({})), fs: () => fsCalls, send: st => es.onmessage({ data: JSON.stringify(st) }) };
 }
 let { $, body, store, sandbox, send } = boot({ pptCur: "0", pptNext: "0" });
 let fails = 0; const T = (n, c) => { if (!c) fails++; console.log((c ? "OK   " : "FAIL ") + n); };
@@ -105,21 +107,54 @@ T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl")
   T("v2: il PC riaccende tutto, subito", !hasD("nostyle") && !hasD("noctl") && hasD("showcur") && hasD("shownext"));
   D.$("curb").onclick();
   T("v2: sul telefono si puo' comunque nascondere ci\u00f2 che il PC permette", !hasD("showcur"));
-  // ---- versione 2.1: barra comandi e tutto schermo scelti dal PC
+  // ---- versione 3: barra, "vai alla slide", striscia, lucchetto
   const E = boot({});
   const hasE = c => E.body._cls.has(c);
-  E.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: true, full: false }, shows: [sh(1)] });
-  T("v2.1: barra visibile, tutto schermo non abilitato", !hasE("nobar") && E.$("full").style.display === "none");
-  E.tap(); T("v2.1: tutto schermo non abilitato -> il tocco non lo attiva", E.fs() === 0);
-  E.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: false, full: true }, shows: [sh(1)] });
-  T("v2.1: barra spenta dal PC -> classe nobar", hasE("nobar"));
-  T("v2.1: tutto schermo acceso -> pulsante visibile", E.$("full").style.display === "");
-  E.tap(); T("v2.1: primo tocco -> tutto schermo", E.fs() === 1);
-  E.tap(); T("v2.1: solo al primo tocco", E.fs() === 1);
-  E.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true, bar: true, full: true }, shows: [sh(1)] });
-  T("v2.1: barra riaccesa subito", !hasE("nobar"));
-  D.send({ control: true, shows: [sh(2)] });   // vecchio formato senza 'ui': tutto disponibile
-  T("v2: stato senza 'ui' = tutto disponibile", !hasD("nostyle") && !hasD("noctl") && D.$("styleb").style.display === "");
+  const U = (o) => Object.assign({ bar: true, style: true, cur: true, next: true, goto: true, ctl: true }, o);
+  E.send({ control: true, ui: U({}), shows: [sh(1)] });
+  T("v3: tutto abilitato -> barra, stile e 'vai' visibili", !hasE("nobar") && !hasE("nogoto") && !hasE("nostyle"));
+  E.send({ control: true, ui: U({ goto: false }), shows: [sh(1)] });
+  T("v3: 'Vai direttamente alla slide' spento dal PC -> nascosto, Avanti/Indietro restano", hasE("nogoto") && !hasE("noctl"));
+  E.send({ control: true, ui: U({ bar: false }), shows: [sh(1)] });
+  T("v3: barra spenta dal PC -> classe nobar (resta la striscia)", hasE("nobar"));
+  E.send({ control: true, ui: U({}), shows: [sh(1)] });
+  T("v3: barra riaccesa subito", !hasE("nobar") && !hasE("nogoto"));
+  E.$("hide").onclick();
+  T("v3: 'Nascondi barra' -> classe hidebar (striscia visibile)", hasE("hidebar"));
+  E.$("sbar").onclick();
+  T("v3: pulsante Barra della striscia riapre la barra", !hasE("hidebar"));
+  E.send({ control: true, ui: U({ ctl: false }), shows: [sh(1)] });
+  T("v3: comandi spenti dal PC -> pulsante Comandi nella striscia nascosto", hasE("nostripctl"));
+  E.send({ control: true, ui: U({}), shows: [sh(1)] });
+  E.$("sctl").onclick();
+  T("v3: striscia: pulsante Comandi nasconde Avanti/Indietro", hasE("noctl") && !E.$("sctl")._cls.has("on"));
+  E.$("sctl").onclick();
+  T("v3: e li rimostra", !hasE("noctl") && E.$("sctl")._cls.has("on"));
+  // lucchetto
+  E.$("slock").onclick();
+  T("v3: lucchetto -> schermo bloccato", hasE("locked"));
+  E.run("LOCK_HOLD_MS = 60");
+  E.$("sunlock").onpointerdown({ preventDefault() {} });
+  E.$("sunlock").onpointerup();
+  T("v3: rilasciare prima del tempo non sblocca", hasE("locked") && !E.$("sunlock")._cls.has("holding"));
+  E.$("sunlock").onpointerdown({ preventDefault() {} });
+  T("v3: tenendo premuto parte l'avanzamento", E.$("sunlock")._cls.has("holding") && hasE("locked"));
+  setTimeout(() => {
+    T("v3: dopo il tempo di pressione lo schermo si sblocca", !hasE("locked") && !E.$("sunlock")._cls.has("holding"));
+    E.$("lockb").onclick();
+    T("v3: lucchetto anche dalla barra", hasE("locked"));
+    E.$("sunlock").onpointerdown({ preventDefault() {} }); E.$("sunlock").onpointerleave();
+    T("v3: uscire dal pulsante annulla lo sblocco", hasE("locked"));
+    E.run("LOCK_HOLD_MS = 5000"); E.$("sunlock").onpointerdown({ preventDefault() {} }); E.$("sunlock").onpointerup();
+    // schermo sempre acceso: parte al primo tocco
+    T("v3: video silenzioso anti-standby creato", E.vids().length === 1 && E.vids()[0].played > 0);
+    finish3();
+  }, 150);
+  function finish3() {
+    D.send({ control: true, shows: [sh(2)] });   // vecchio formato senza 'ui': tutto disponibile
+    T("v3: stato senza 'ui' = tutto disponibile", !hasD("nostyle") && !hasD("noctl") && D.$("styleb").style.display === "");
+    console.log(fails ? "CI SONO " + fails + " ERRORI" : "TUTTO OK"); process.exit(fails ? 1 : 0);
+  }
+  return;
 }
-console.log(fails ? "CI SONO " + fails + " ERRORI" : "TUTTO OK"); process.exit(fails ? 1 : 0);
 }
