@@ -285,10 +285,10 @@ QR_PAGE = """<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
 <style>body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
 justify-content:center;background:#fff;font-family:Arial,sans-serif;color:#000;text-align:center}
 img.qr{width:min(70vw,70vh);height:min(70vw,70vh)}p{font-size:28px;margin:10px}
-.hd{display:flex;align-items:center;gap:12px;font-size:34px;font-weight:700;color:#14434d}
-.hd img{width:56px;height:56px}.cr{font-size:14px;color:#444;line-height:1.5}
+.hd{display:flex;align-items:center;justify-content:center}
+.hd img{width:130px;height:130px}.cr{font-size:14px;color:#444;line-height:1.5}
 .cr a{color:#14434d}.cr img{vertical-align:middle;margin-right:4px}</style></head>
-<body><div class="hd"><img src="/static/remnote-192.png" alt="">reMNote</div>
+<body><div class="hd"><img src="/static/remnote-192.png" alt="reMNote"></div>
 <img class="qr" src="/qr.svg" alt="QR"><p>__URL__</p>
 <p style="font-size:16px">Inquadra con lo smartphone (stessa rete Wi-Fi)</p>
 <div class="cr">__CREDITS__</div></body></html>"""
@@ -464,8 +464,7 @@ PAGE = r"""<!DOCTYPE html>
             align-items:center; justify-content:center; padding:16px; }
   #infobox { background:#fff; color:#111; border-radius:14px; padding:22px 26px; max-width:440px;
              text-align:center; font:15px/1.6 Arial, sans-serif; }
-  #infobox img.logo { width:96px; height:96px; }
-  #infobox h2 { margin:6px 0 0; color:#14434d; }
+  #infobox img.logo { width:150px; height:150px; }
   #infobox .ver { color:#666; font-size:13px; margin-bottom:12px; }
   #infobox a { color:#14434d; }
   #infobox .mwtl img { vertical-align:middle; margin-right:4px; }
@@ -524,7 +523,6 @@ PAGE = r"""<!DOCTYPE html>
 <div id="infoov">
   <div id="infobox">
     <img class="logo" src="/static/remnote-192.png" alt="reMNote">
-    <h2>reMNote</h2>
     <div class="ver">Versione __VERSION__</div>
     <div>__CREDITS__</div>
     <div style="margin-top:12px;color:#888;font-size:12px">Tocca per chiudere</div>
