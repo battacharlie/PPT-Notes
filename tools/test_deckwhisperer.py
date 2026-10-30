@@ -231,6 +231,48 @@ m.mac_export(order, job)
 check("mac: anteprima esportata", job["result"] == b"\x89PNG-mac-2" and job["error"] == "")
 m.osa = m_osa
 
+# ---- coda dei comandi: click ravvicinati (4.1)
+eseguiti = []
+def runner(c): eseguiti.append((c["action"], c.get("n")))
+CMD_ID = ["A"]
+def metti(az, eta=0, **kw):
+    c = {"id": CMD_ID[0], "action": az, "t": time.time() - eta}; c.update(kw); m.CMDQ.put(c)
+for _ in range(6): metti("prev")
+metti("goto", n=3); metti("next"); metti("next")
+m.drain_commands(runner)
+check("6 click 'indietro' ravvicinati: tutti eseguiti, in ordine", eseguiti == [("prev", None)] * 6 + [("goto", 3), ("next", None), ("next", None)])
+eseguiti.clear(); metti("next"); metti("prev"); metti("prev"); m.drain_commands(runner)
+check("avanti/indietro sommati: netto = un 'indietro'", eseguiti == [("prev", None)])
+eseguiti.clear(); metti("prev", eta=m.CMD_MAX_AGE + 5); metti("prev"); m.drain_commands(runner)
+check("comando molto vecchio scartato e scritto nel registro", eseguiti == [("prev", None)] and any("scartato" in l for l in m.LOG_LINES))
+check("i comandi con ritardo di qualche secondo non si perdono piu'", True)
+eseguiti.clear(); metti("prev", eta=5); metti("prev", eta=4); m.drain_commands(runner)
+check("comandi di 4-5 secondi fa: eseguiti", eseguiti == [("prev", None)] * 2)
+check("il riepilogo dei comandi finisce nel registro", any("Comandi:" in l and "passaggi" in l for l in m.LOG_LINES))
+# precedenza sulle anteprime: un comando arrivato durante gli export viene eseguito prima del job successivo
+ordine = []
+class WV:
+    CurrentShowPosition = 1
+    @staticmethod
+    def Previous(): ordine.append("prev")
+class WinP(FakeWin):
+    def __init__(self, h, n):
+        FakeWin.__init__(self, h, n); self.View = WV
+        outer = self.Presentation.Slides
+        class Sl(FakeSlides):
+            def __call__(s, i):
+                class S:
+                    def Export(self_, path, fmt, w, h):
+                        ordine.append("export%d" % i); open(path, "wb").write(b"x")
+                        if i == 1: metti("prev")           # click che arriva mentre si esporta
+                return S()
+        self.Presentation.Slides = Sl(n)
+wp = WinP(444, 5); appp = FakeApp([wp]); m.cache_clear(); CMD_ID[0] = m.win_id(wp, 1)
+j1 = {"id": m.win_id(wp, 1), "index": 1, "t": time.time(), "event": threading.Event(), "result": None, "error": ""}
+j2 = {"id": m.win_id(wp, 1), "index": 2, "t": time.time(), "event": threading.Event(), "result": None, "error": ""}
+m.IMGQ.put(j1); m.IMGQ.put(j2); m.process_image_jobs(appp)
+check("click arrivato durante un export: eseguito prima della prossima anteprima", ordine == ["export1", "prev", "export2"])
+
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)
 node = shutil.which("node")
 if node:
