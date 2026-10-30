@@ -101,7 +101,20 @@
    "open_notes": "Open the notes page on this PC",
    "diag": "Diagnostics",
    "g_lang": "Language",
-   "g_lang_hint": "Applies to this page, to all phones and to the guide."
+   "g_lang_hint": "Applies to this page, to all phones and to the guide.",
+   "r_title": "3. Remote access (outside this network)",
+   "r_desc": "For phones that are NOT on the same network as this PC (mobile data, another Wi-Fi). Off by default: switch it on only when you need it. The notes and slide previews pass through the MEFISTOFELE relay server, encrypted (HTTPS); nothing is stored.",
+   "r_start": "Switch on remote access",
+   "r_stop": "Switch off",
+   "r_copy": "Copy link",
+   "r_copied": "Link copied",
+   "r_st_starting": "Connecting…",
+   "r_st_online": "Online - the link works",
+   "r_st_error": "Cannot reach the relay server (retrying)",
+   "r_st_off": "Off",
+   "r_nopin": "No PIN set: remote phones can only read the notes. Set a PIN above to let them use the controls.",
+   "r_pin_ok": "Controls from outside need the PIN above.",
+   "r_privacy": "The link is private and changes every time you switch remote access on. Share it only with the people who need it. Switching off (or closing the program) ends access immediately."
   },
   "it": {
    "present": "Presentazione",
@@ -193,7 +206,20 @@
    "open_notes": "Apri la pagina delle note su questo PC",
    "diag": "Diagnostica",
    "g_lang": "Lingua",
-   "g_lang_hint": "Vale per questa pagina, per tutti i telefoni e per la guida."
+   "g_lang_hint": "Vale per questa pagina, per tutti i telefoni e per la guida.",
+   "r_title": "3. Accesso remoto (fuori da questa rete)",
+   "r_desc": "Per i telefoni che NON sono nella stessa rete del PC (rete dati, un altro Wi-Fi). È spento di default: accendilo solo quando serve. Note e anteprime passano dal server relay di MEFISTOFELE, cifrate (HTTPS); non viene salvato nulla.",
+   "r_start": "Attiva l'accesso remoto",
+   "r_stop": "Disattiva",
+   "r_copy": "Copia il link",
+   "r_copied": "Link copiato",
+   "r_st_starting": "Connessione in corso…",
+   "r_st_online": "Online - il link funziona",
+   "r_st_error": "Server relay non raggiungibile (riprovo)",
+   "r_st_off": "Spento",
+   "r_nopin": "Nessun PIN: i telefoni remoti possono solo leggere le note. Imposta un PIN qui sopra per far usare i comandi.",
+   "r_pin_ok": "I comandi da fuori richiedono il PIN impostato qui sopra.",
+   "r_privacy": "Il link è privato e cambia ogni volta che attivi l'accesso remoto. Condividilo solo con chi serve. Disattivando (o chiudendo il programma) l'accesso termina subito."
   },
   "fr": {
    "present": "Présentation",
@@ -285,7 +311,20 @@
    "open_notes": "Ouvrir la page des notes sur ce PC",
    "diag": "Diagnostic",
    "g_lang": "Langue",
-   "g_lang_hint": "S'applique à cette page, à tous les téléphones et au guide."
+   "g_lang_hint": "S'applique à cette page, à tous les téléphones et au guide.",
+   "r_title": "3. Accès à distance (hors de ce réseau)",
+   "r_desc": "Pour les téléphones qui ne sont PAS sur le même réseau que ce PC (données mobiles, autre Wi-Fi). Désactivé par défaut : ne l'activez que si nécessaire. Les notes et les aperçus passent par le serveur relais MEFISTOFELE, chiffrés (HTTPS) ; rien n'est enregistré.",
+   "r_start": "Activer l'accès à distance",
+   "r_stop": "Désactiver",
+   "r_copy": "Copier le lien",
+   "r_copied": "Lien copié",
+   "r_st_starting": "Connexion…",
+   "r_st_online": "En ligne - le lien fonctionne",
+   "r_st_error": "Serveur relais injoignable (nouvelle tentative)",
+   "r_st_off": "Désactivé",
+   "r_nopin": "Aucun PIN : les téléphones distants ne peuvent que lire les notes. Définissez un PIN ci-dessus pour autoriser les commandes.",
+   "r_pin_ok": "Les commandes depuis l'extérieur demandent le PIN défini ci-dessus.",
+   "r_privacy": "Le lien est privé et change à chaque activation. Ne le partagez qu'avec les personnes concernées. Désactiver (ou fermer le programme) coupe l'accès immédiatement."
   },
   "es": {
    "present": "Presentación",
@@ -377,7 +416,20 @@
    "open_notes": "Abrir la página de notas en este PC",
    "diag": "Diagnóstico",
    "g_lang": "Idioma",
-   "g_lang_hint": "Se aplica a esta página, a todos los teléfonos y a la guía."
+   "g_lang_hint": "Se aplica a esta página, a todos los teléfonos y a la guía.",
+   "r_title": "3. Acceso remoto (fuera de esta red)",
+   "r_desc": "Para teléfonos que NO están en la misma red que este PC (datos móviles, otra Wi-Fi). Desactivado por defecto: actívalo solo cuando lo necesites. Las notas y las vistas previas pasan por el servidor relé de MEFISTOFELE, cifradas (HTTPS); no se guarda nada.",
+   "r_start": "Activar el acceso remoto",
+   "r_stop": "Desactivar",
+   "r_copy": "Copiar enlace",
+   "r_copied": "Enlace copiado",
+   "r_st_starting": "Conectando…",
+   "r_st_online": "En línea - el enlace funciona",
+   "r_st_error": "No se puede contactar con el servidor relé (reintentando)",
+   "r_st_off": "Desactivado",
+   "r_nopin": "Sin PIN: los teléfonos remotos solo pueden leer las notas. Define un PIN arriba para permitir los controles.",
+   "r_pin_ok": "Los controles desde fuera piden el PIN definido arriba.",
+   "r_privacy": "El enlace es privado y cambia cada vez que activas el acceso remoto. Compártelo solo con quien lo necesite. Al desactivar (o cerrar el programa) el acceso termina de inmediato."
   },
   "ar": {
    "present": "العرض التقديمي",
@@ -469,7 +521,20 @@
    "open_notes": "فتح صفحة الملاحظات على هذا الكمبيوتر",
    "diag": "التشخيص",
    "g_lang": "اللغة",
-   "g_lang_hint": "تنطبق على هذه الصفحة وعلى جميع الهواتف وعلى الدليل."
+   "g_lang_hint": "تنطبق على هذه الصفحة وعلى جميع الهواتف وعلى الدليل.",
+   "r_title": "3. الوصول عن بُعد (خارج هذه الشبكة)",
+   "r_desc": "للهواتف غير المتصلة بنفس شبكة هذا الكمبيوتر (بيانات الجوال أو شبكة Wi-Fi أخرى). معطّل افتراضيًا: فعّله عند الحاجة فقط. تمر الملاحظات ومعاينات الشرائح عبر خادم MEFISTOFELE الوسيط بتشفير (HTTPS) ولا يتم حفظ أي شيء.",
+   "r_start": "تفعيل الوصول عن بُعد",
+   "r_stop": "إيقاف",
+   "r_copy": "نسخ الرابط",
+   "r_copied": "تم نسخ الرابط",
+   "r_st_starting": "جارٍ الاتصال…",
+   "r_st_online": "متصل - الرابط يعمل",
+   "r_st_error": "تعذّر الوصول إلى الخادم الوسيط (إعادة المحاولة)",
+   "r_st_off": "متوقف",
+   "r_nopin": "لا يوجد PIN: يمكن للهواتف البعيدة قراءة الملاحظات فقط. عيّن PIN أعلاه للسماح بأزرار التحكم.",
+   "r_pin_ok": "أزرار التحكم من الخارج تتطلب الـ PIN المحدد أعلاه.",
+   "r_privacy": "الرابط خاص ويتغيّر في كل مرة تفعّل فيها الوصول عن بُعد. شاركه فقط مع من يحتاجه. عند الإيقاف (أو إغلاق البرنامج) ينتهي الوصول فورًا."
   },
   "zh": {
    "present": "演示文稿",
@@ -561,7 +626,20 @@
    "open_notes": "在此电脑上打开备注页面",
    "diag": "诊断",
    "g_lang": "语言",
-   "g_lang_hint": "适用于本页面、所有手机以及指南。"
+   "g_lang_hint": "适用于本页面、所有手机以及指南。",
+   "r_title": "3. 远程访问（本网络之外）",
+   "r_desc": "适用于不在本电脑所在网络的手机（移动数据、其他 Wi-Fi）。默认关闭：需要时再开启。备注和幻灯片预览经由 MEFISTOFELE 中继服务器加密（HTTPS）传输，不会被保存。",
+   "r_start": "开启远程访问",
+   "r_stop": "关闭",
+   "r_copy": "复制链接",
+   "r_copied": "链接已复制",
+   "r_st_starting": "正在连接…",
+   "r_st_online": "在线 - 链接可用",
+   "r_st_error": "无法连接中继服务器（正在重试）",
+   "r_st_off": "已关闭",
+   "r_nopin": "未设置 PIN：远程手机只能查看备注。请在上方设置 PIN 以允许使用控制按钮。",
+   "r_pin_ok": "来自外部的控制需要上方设置的 PIN。",
+   "r_privacy": "该链接是私密的，每次开启远程访问都会变化。请仅分享给需要的人。关闭（或退出程序）后访问立即结束。"
   }
  }
 }

@@ -84,6 +84,15 @@ Abajo: botones grandes **Anterior** y **Siguiente**, más la casilla **Ir** para
 Si hay varias presentaciones abiertas, elige la que seguir en el menú **Presentación** (no disponible con *Bloquear pantalla remota*).
 Cada teléfono recuerda sus elecciones (estilo del texto, qué mostrar). El idioma es el elegido en la página de gestión.
 
+## Acceso remoto (teléfonos fuera de la red)
+Para teléfonos que **no** están en la misma red que el PC (datos móviles, otra Wi-Fi). Está **desactivado por defecto**: actívalo solo cuando lo necesites.
+1. En la página de gestión, en el recuadro **Acceso remoto**, pulsa **Activar el acceso remoto**.
+2. Aparecen un enlace privado (`https://remote.mefistofele.com:8443/s/...`) y un código QR. Abre el enlace en el teléfono remoto.
+3. Para que ese teléfono pueda usar **Siguiente/Anterior/Ir a la diapositiva**, define un **PIN** en la página de gestión: sin PIN, los teléfonos remotos solo pueden leer las notas. Desde fuera el PIN siempre se pide y, tras 5 intentos erróneos, los controles se bloquean durante 5 minutos.
+4. Pulsa **Desactivar** (o cierra el programa) para terminar el acceso al instante. El enlace cambia cada vez que lo activas.
+
+El PC se conecta **hacia fuera** al servidor relé de MEFISTOFELE: no hace falta configurar el router ni el cortafuegos. Las notas y las vistas previas pasan por el relé cifradas (HTTPS) y **no se guardan**.
+
 ## Opciones de línea de comandos
 Windows: `mefistofele.exe --port 8080 --pin 1234 --no-control --no-browser --demo`
 Mac: `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
@@ -93,6 +102,8 @@ Mac: `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
 - `--no-control` desactiva por completo los controles del teléfono
 - `--no-browser` no abre la página de gestión en el ordenador
 - `--demo` prueba sin PowerPoint
+- `--remote` activa el acceso remoto al iniciar
+- `--relay` dirección del servidor relé (por defecto `https://remote.mefistofele.com:8443`)
 
 ## Solución de problemas
 - **El teléfono no se conecta**: ¿misma red? Si el ordenador tiene varios adaptadores, elige el correcto en la página de gestión. Firewall de Windows: permite las *redes privadas* (y las públicas si tu Wi-Fi se considera pública). En Mac permite las conexiones entrantes si se solicita.

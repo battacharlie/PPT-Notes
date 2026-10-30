@@ -19,6 +19,10 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 **Releases** → `mefistofele.exe` (Windows 10/11 + PowerPoint) e `mefistofele-mac.zip` (macOS 12+ + PowerPoint per Mac). Ogni release contiene anche `SHA256SUMS.txt` e i sei manuali `MANUAL-xx.md`.
 Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente, in fondo **mefistofele-windows** e **mefistofele-mac**.
 
+## Novità della 4.0 / What's new in 4.0
+- **Accesso remoto / Remote access**: per i telefoni fuori dalla rete (rete dati, altro Wi-Fi). Spento di default, si attiva dalla pagina di gestione; link privato e QR, PIN sempre richiesto per i comandi, nessuna porta da aprire. Passa dal relay `remote.mefistofele.com` (`relay/`, vedi `docs/RELAY.md`) / For phones outside the network. Off by default, switched on from the management page; private link and QR, PIN always required for controls, no ports to open. Goes through the relay `remote.mefistofele.com`.
+- Opzioni `--remote` e `--relay` / `--remote` and `--relay` options.
+
 ## Novità della 3.2 / What's new in 3.2
 - Pagina remota: con la barra aperta è sempre visibile per intero e il resto della pagina scende / Remote page: the open toolbar is fully visible and the rest of the page moves down.
 
@@ -36,7 +40,7 @@ Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente,
 ## Sviluppo / Development
 - Sorgente: `windows/deckwhisperer.py` (Python + pywin32 su Windows / AppleScript su Mac + qrcode). Traduzioni in `windows/assets/i18n.json`. Icone in `windows/assets/` (generate da `tools/make_icons.py` a partire da `deckwhisperer-logo.png`).
 - Build locale: `windows/crea_deckwhisperer_exe.bat`.
-- Test (senza PowerPoint): `python tools/test_deckwhisperer.py` (richiede Node.js).
+- Test (senza PowerPoint): `python tools/test_deckwhisperer.py` (richiede Node.js) e `python tools/test_remote.py` (accesso remoto: relay + programma).
 - Build automatica: GitHub Actions (`.github/workflows/build-windows.yml`, "Compila") a ogni push, con collaudo dell'exe in modalità demo.
 
 **Pubblicare una release**: scrivi il nuovo numero nel file `VERSION` (es. `2.2`) e porta le modifiche su `main`

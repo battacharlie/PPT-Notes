@@ -1,0 +1,24 @@
+[Unit]
+Description=MEFISTOFELE DeckWhisperer - relay per l'accesso remoto
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mefrelay
+Group=mefrelay
+ExecStart=/usr/bin/python3 /opt/mefistofele-relay/mefistofele_relay.py --porta 8443 --cert /etc/mefistofele-relay/fullchain.pem --key /etc/mefistofele-relay/privkey.pem
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+LimitNOFILE=4096
+MemoryMax=300M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

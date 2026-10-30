@@ -180,7 +180,7 @@ check("scheda sparita: si torna all'automatica", m.BASE_URL == "http://192.168.1
 post("/settings", {"ui": {}, "nic": ""}); check("scheda 'automatica' selezionabile", m.NIC_IP == "")
 st, ct, _, body = get("/guida")
 check("guida di default in inglese (200, HTML con titoli e tabelle)", st == 200 and "text/html" in ct and b"<h2>" in body and b"<table>" in body and b"Quick start" in body and b'lang="en"' in body)
-check("guida: selettore con tutte le lingue", all(("/guida?lang=%s" % c).encode() in body for c in ("en","it","fr","es","ar","zh")))
+check("guida: selettore con tutte le lingue", all(("guida?lang=%s" % c).encode() in body for c in ("en","it","fr","es","ar","zh")))
 for c, rtl in (("it",0),("fr",0),("es",0),("ar",1),("zh",0)):
     st, ct, _, body = get("/guida?lang=" + c)
     check("guida %s (200, titoli, %s)" % (c, "rtl" if rtl else "ltr"), st == 200 and b"<h2>" in body and (b'dir="rtl"' in body) == bool(rtl) and ('lang="%s"' % c).encode() in body)

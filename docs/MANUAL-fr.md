@@ -84,6 +84,15 @@ En bas : grands boutons **Précédent** et **Suivant**, plus le champ **Aller** 
 Si plusieurs présentations sont ouvertes, choisissez celle à suivre dans le menu **Présentation** (indisponible avec *Verrouiller l'écran distant*).
 Chaque téléphone mémorise ses propres choix (style du texte, éléments affichés). La langue est celle choisie dans la page de gestion.
 
+## Accès à distance (téléphones hors du réseau)
+Pour les téléphones qui ne sont **pas** sur le même réseau que le PC (données mobiles, autre Wi-Fi). **Désactivé par défaut** : ne l'activez que si nécessaire.
+1. Dans la page de gestion, dans le cadre **Accès à distance**, appuyez sur **Activer l'accès à distance**.
+2. Un lien privé (`https://remote.mefistofele.com:8443/s/...`) et un QR code apparaissent. Ouvrez le lien sur le téléphone distant.
+3. Pour que ce téléphone puisse utiliser **Suivant/Précédent/Aller à la diapositive**, définissez un **PIN** dans la page de gestion : sans PIN, les téléphones distants ne peuvent que lire les notes. Le PIN est toujours demandé depuis l'extérieur et, après 5 essais erronés, les commandes sont bloquées pendant 5 minutes.
+4. Appuyez sur **Désactiver** (ou fermez le programme) pour couper l'accès immédiatement. Le lien change à chaque activation.
+
+Le PC se connecte **vers l'extérieur** au serveur relais MEFISTOFELE : aucun réglage du routeur ou du pare-feu n'est nécessaire. Les notes et les aperçus transitent par le relais chiffrés (HTTPS) et **ne sont pas enregistrés**.
+
 ## Options en ligne de commande
 Windows : `mefistofele.exe --port 8080 --pin 1234 --no-control --no-browser --demo`
 Mac : `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
@@ -93,6 +102,8 @@ Mac : `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
 - `--no-control` désactive complètement les commandes depuis le téléphone
 - `--no-browser` n'ouvre pas la page de gestion sur l'ordinateur
 - `--demo` essai sans PowerPoint
+- `--remote` active l'accès à distance au démarrage
+- `--relay` adresse du serveur relais (par défaut `https://remote.mefistofele.com:8443`)
 
 ## Dépannage
 - **Le téléphone ne se connecte pas** : même réseau ? Si l'ordinateur a plusieurs cartes, choisissez la bonne dans la page de gestion. Pare-feu Windows : autorisez les *réseaux privés* (et publics si votre Wi-Fi est vu comme public). Sur Mac, autorisez les connexions entrantes si on vous le demande.

@@ -58,6 +58,9 @@ jobs:
       - name: Test (anteprime slide e pagina)
         run: python tools/test_deckwhisperer.py
 
+      - name: Test accesso remoto (relay + programma)
+        run: python tools/test_remote.py
+
       - name: Informazioni di versione
         run: python tools/buildinfo.py "${{ steps.ver.outputs.shown }}" "${{ steps.ver.outputs.num }}"
 
@@ -143,6 +146,9 @@ jobs:
 
       - name: Test (anteprime slide e pagina)
         run: python tools/test_deckwhisperer.py
+
+      - name: Test accesso remoto (relay + programma)
+        run: python tools/test_remote.py
 
       - name: Informazioni di versione
         run: python tools/buildinfo.py "${{ needs.build.outputs.shown }}" "${{ needs.build.outputs.num }}"
