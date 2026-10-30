@@ -359,6 +359,77 @@ def log(msg):
             continue
 
 
+LOG_EV_COUNT = [0]
+CMD_MAX_AGE = 15.0     # un comando piu' vecchio di cosi' non ha piu' senso: si scarta, ma si scrive nel registro
+
+
+def log_ev(msg):
+    """Come log(), ma senza togliere i messaggi uguali (servono i tempi): al massimo 300 righe per avvio."""
+    if LOG_EV_COUNT[0] >= 300:
+        return
+    LOG_EV_COUNT[0] += 1
+    line = "%s %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg)
+    LOG_LINES.append(line)
+    try:
+        print(" [registro] " + msg)
+    except Exception:
+        pass
+    for pth in log_paths():
+        try:
+            with open(pth, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            LOG_FILE_USED[0] = pth
+            break
+        except Exception:
+            continue
+
+
+def drain_commands(runner):
+    """Esegue i comandi in coda. Avanti/indietro consecutivi sulla stessa presentazione
+    vengono sommati in un solo passaggio; si scarta (e si registra) solo cio' che e' molto vecchio."""
+    cmds = []
+    while True:
+        try:
+            cmds.append(CMDQ.get_nowait())
+        except queue.Empty:
+            break
+    if not cmds:
+        return 0
+    t0 = time.time()
+    batch = []
+    for c in cmds:
+        age = t0 - c.get("t", t0)
+        if age > CMD_MAX_AGE:
+            log_ev("Comando scartato: troppo vecchio (%.1f s): %s" % (age, c.get("action")))
+            continue
+        act = c.get("action")
+        if act in ("next", "prev"):
+            step = 1 if act == "next" else -1
+            if batch and batch[-1].get("action") == "step" and batch[-1]["id"] == c.get("id"):
+                batch[-1]["n"] += step
+                continue
+            batch.append({"id": c.get("id"), "action": "step", "n": step})
+        else:
+            batch.append(c)
+    done = 0
+    for b in batch:
+        try:
+            if b["action"] == "step":
+                act = "next" if b["n"] > 0 else "prev"
+                for _ in range(abs(b["n"])):
+                    runner({"id": b["id"], "action": act})
+                    done += 1
+            else:
+                runner(b)
+                done += 1
+        except Exception as e:
+            log_ev("Comando %s non eseguito: %s: %s" % (b.get("action"), type(e).__name__, e))
+    dt = time.time() - t0
+    if len(cmds) > 1 or dt > 0.5:
+        log_ev("Comandi: %d ricevuti, %d passaggi eseguiti in %.2f s" % (len(cmds), done, dt))
+    return len(cmds)
+
+
 def diagnostica_info():
     """Testo con le informazioni utili per capire un problema, senza cercare file."""
     lines = [
@@ -506,6 +577,7 @@ def export_slide(app, job):
 
 def process_image_jobs(app):
     while True:
+        drain_commands(lambda c: run_command(app, c))   # i comandi hanno la precedenza sulle anteprime
         try:
             job = IMGQ.get_nowait()
         except queue.Empty:
@@ -514,7 +586,10 @@ def process_image_jobs(app):
             job["event"].set()   # nessuno la sta piu' aspettando
             continue
         try:
+            t_exp = time.time()
             export_slide(app, job)
+            if time.time() - t_exp > 1.5:
+                log_ev("Anteprima lenta: slide %s in %.1f s" % (job["index"], time.time() - t_exp))
         except Exception as e:
             job["result"] = None
             job["error"] = "%s: %s" % (type(e).__name__, e)
@@ -542,17 +617,7 @@ def poll_powerpoint(interval):
         try:
             if app is None:
                 app = win32com.client.GetActiveObject("PowerPoint.Application")
-            while True:
-                try:
-                    cmd = CMDQ.get_nowait()
-                except queue.Empty:
-                    break
-                if time.time() - cmd.get("t", 0) > 2.0:
-                    continue  # comando vecchio: non va eseguito in ritardo
-                try:
-                    run_command(app, cmd)
-                except Exception:
-                    pass
+            drain_commands(lambda c: run_command(app, c))
             process_image_jobs(app)
             if int(app.SlideShowWindows.Count) > 0:
                 shows = read_shows(app)
@@ -745,18 +810,9 @@ def poll_powerpoint_mac(interval):
     while True:
         shows = []
         try:
+            drain_commands(lambda c: mac_run_command(order, c))
             while True:
-                try:
-                    cmd = CMDQ.get_nowait()
-                except queue.Empty:
-                    break
-                if time.time() - cmd.get("t", 0) > 2.0:
-                    continue
-                try:
-                    mac_run_command(order, cmd)
-                except Exception as e:
-                    log("PowerPoint Mac command: %s" % e)
-            while True:
+                drain_commands(lambda c: mac_run_command(order, c))   # i comandi hanno la precedenza
                 try:
                     job = IMGQ.get_nowait()
                 except queue.Empty:
