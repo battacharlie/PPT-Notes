@@ -31,7 +31,7 @@ jobs:
           RELEASE=false
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="$GITHUB_REF_NAME"; RELEASE=true
-          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+          elif [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/heads/serie-3 ]]; then
             VERSION="v$(tr -d ' \r\n' < VERSION)"
             if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" > /dev/null; then
               VERSION="$VERSION-main-${GITHUB_SHA::7}"   # già pubblicata: compilazione di prova
@@ -207,6 +207,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build.outputs.version }}
+          make_latest: false   # serie 3: la release 'latest' resta quella della serie 4
           target_commitish: ${{ github.sha }}
           name: MEFISTOFELE DeckWhisperer ${{ needs.build.outputs.num }}
           files: |
@@ -228,6 +229,12 @@ jobs:
             | `mefistofele.exe` | Windows 10/11 + PowerPoint |
             | `mefistofele-mac.zip` | macOS 12+ + PowerPoint for Mac |
             | `MANUAL-xx.md` | Manual: [English](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-en.md) · [Italiano](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-it.md) · [Français](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-fr.md) · [Español](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-es.md) · [العربية](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-ar.md) · [中文](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-zh.md) |
+
+            ### What's new in 3.3
+            - **More reliable fast clicks**: commands from the phone take priority over slide previews, are no longer dropped after 2 seconds, and consecutive next/previous clicks are added up into one step.
+            - The log (`mefistofele.log`) now records discarded commands, summaries of fast clicks and slow previews.
+            - **Known limitation**: with presentations of more than 10 slides and very fast clicks, playback problems may still occur (late previews or steps not completed). If it happens, switch the previews off (Current slide, Next slide) on the management page.
+            - This is the last of the 3 series: phones on the same network only, no remote access. Version 4 adds optional remote access.
 
             ### What's new in 3.1
             - **Languages**: English (default), Italiano, Français, Español, العربية, 中文 — chosen on the management page and applied to all phones and to the guide.

@@ -19,6 +19,14 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 **Releases** → `mefistofele.exe` (Windows 10/11 + PowerPoint) e `mefistofele-mac.zip` (macOS 12+ + PowerPoint per Mac). Ogni release contiene anche `SHA256SUMS.txt` e i sei manuali `MANUAL-xx.md`.
 Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente, in fondo **mefistofele-windows** e **mefistofele-mac**.
 
+## Novità della 3.3 / What's new in 3.3 (serie 3 / 3 series)
+- **Click ravvicinati più affidabili / More reliable fast clicks**: i comandi dal telefono hanno la precedenza sulle anteprime, non vengono più scartati dopo 2 secondi e "avanti/indietro" consecutivi vengono sommati / commands take priority over previews, are no longer dropped after 2 seconds, and consecutive next/previous clicks are added up.
+- **Registro più utile / Better log**: comandi scartati, riepiloghi dei click ravvicinati e anteprime lente / discarded commands, fast-click summaries and slow previews.
+- Ultima della serie 3: solo telefoni nella stessa rete, senza accesso remoto (la 4 lo aggiunge) / Last of the 3 series: same-network phones only, no remote access (version 4 adds it).
+
+### Limite noto / Known limitation
+Con presentazioni di oltre 10 slide e click molto ravvicinati possono ancora verificarsi problemi di riproduzione (anteprime in ritardo o passaggi non completati). Se capita, disattiva le anteprime ("Slide in Onda" e "Slide Successiva") dalla pagina di gestione. / With presentations of more than 10 slides and very fast clicks, playback problems may still occur (late previews or steps not completed). If it happens, switch the previews off ("Current slide" and "Next slide") on the management page.
+
 ## Novità della 3.2 / What's new in 3.2
 - Pagina remota: con la barra aperta è sempre visibile per intero e il resto della pagina scende / Remote page: the open toolbar is fully visible and the rest of the page moves down.
 
