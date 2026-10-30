@@ -235,12 +235,16 @@ jobs:
             | `mefistofele-mac.zip` | macOS 12+ + PowerPoint for Mac |
             | `MANUAL-xx.md` | Manual: [English](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-en.md) · [Italiano](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-it.md) · [Français](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-fr.md) · [Español](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-es.md) · [العربية](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-ar.md) · [中文](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-zh.md) |
 
-            ### What's new in 3.1
-            - **Languages**: English (default), Italiano, Français, Español, العربية, 中文 — chosen on the management page and applied to all phones and to the guide.
-            - **Manual in all six languages**, also in the `docs` folder of the repository.
-            - **Mac version** (PowerPoint for Mac, via AppleScript).
+            ### What's new in 4.0
+            - **Remote access** for phones outside your network (mobile data, another Wi-Fi). Off by default; switch it on from the management page. Private link and QR code that change every time, PIN always required for the controls (without a PIN remote phones only read the notes), nothing to open on your router.
+            - Notes and previews cross the MEFISTOFELE relay (`remote.mefistofele.com`) encrypted over HTTPS and are not stored.
+            - New options `--remote` and `--relay`.
 
-            **How to use**: run the program; the management page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi), pick the language, the network adapter and what the phone should show, then start your slide show in PowerPoint.
+            ### 3.2 or 4.0?
+            - **3.2**: phones on the same network only; nothing ever leaves your network. Still available in the Releases page.
+            - **4.0**: everything in 3.2, plus optional remote access.
+
+            **How to use**: run the program; the management page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi, or use remote access from outside), pick the language, the network adapter and what the phone should show, then start your slide show in PowerPoint.
             Windows: if it says "Windows protected your PC": *More info → Run anyway*; allow **Private networks**.
             Mac: unzip, then follow the Mac steps in the manual (Terminal, `chmod +x`, allow Terminal to control PowerPoint).
 
