@@ -84,6 +84,15 @@ At the bottom: big **Previous** and **Next** buttons, plus the **Go** box to jum
 If several presentations are open, pick the one to follow from the **Presentation** menu (not available with *Lock remote screen*).
 Each phone remembers its own choices (text style, what to show). The language is the one chosen on the management page.
 
+## Remote access (phones outside the network)
+For phones that are **not** on the same network as the PC (mobile data, another Wi-Fi). It is **off by default**: switch it on only when you need it.
+1. In the management page, in the **Remote access** box, press **Switch on remote access**.
+2. A private link (`https://remote.mefistofele.com:8443/s/...`) and a QR code appear. Open the link on the remote phone.
+3. To let that phone use **Next/Previous/Go to slide**, set a **PIN** in the management page: without a PIN, remote phones can only read the notes. The PIN is always requested from outside, and after 5 wrong attempts the controls are blocked for 5 minutes.
+4. Press **Switch off** (or close the program) to end access immediately. The link changes every time you switch it on.
+
+The PC connects **outward** to the MEFISTOFELE relay server: no router or firewall settings are needed. Notes and slide previews pass through the relay encrypted (HTTPS) and are **not stored**.
+
 ## Command-line options
 Windows: `mefistofele.exe --port 8080 --pin 1234 --no-control --no-browser --demo`
 Mac: `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
@@ -93,6 +102,8 @@ Mac: `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
 - `--no-control` turns the phone controls off completely
 - `--no-browser` does not open the management page on the computer
 - `--demo` try it without PowerPoint
+- `--remote` switch on remote access at start
+- `--relay` address of the relay server (default `https://remote.mefistofele.com:8443`)
 
 ## Troubleshooting
 - **The phone can't connect**: same network? If the computer has several adapters, pick the right one on the management page. Windows Firewall: allow *Private networks* (and public ones if your Wi-Fi is seen as public). On Mac allow incoming connections if asked.

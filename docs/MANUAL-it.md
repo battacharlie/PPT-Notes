@@ -84,6 +84,15 @@ In basso: grandi pulsanti **Indietro** e **Avanti**, più la casella **Vai** per
 Se sono aperte più presentazioni, scegli quella da seguire dal menu **Presentazione** (non disponibile con *Blocca schermo Remoto*).
 Ogni telefono ricorda le proprie scelte (stile del testo, cosa mostrare). La lingua è quella scelta nella pagina di gestione.
 
+## Accesso remoto (telefoni fuori dalla rete)
+Per i telefoni che **non** sono nella stessa rete del PC (rete dati, un altro Wi-Fi). È **spento di default**: accendilo solo quando serve.
+1. Nella pagina di gestione, nel riquadro **Accesso remoto**, premi **Attiva l'accesso remoto**.
+2. Compaiono un link privato (`https://remote.mefistofele.com:8443/s/...`) e un QR code. Apri il link sul telefono remoto.
+3. Perché quel telefono possa usare **Avanti/Indietro/Vai alla slide** imposta un **PIN** nella pagina di gestione: senza PIN i telefoni remoti possono solo leggere le note. Da fuori il PIN è sempre richiesto e dopo 5 tentativi sbagliati i comandi si bloccano per 5 minuti.
+4. Premi **Disattiva** (o chiudi il programma) per terminare subito l'accesso. Il link cambia ogni volta che lo attivi.
+
+Il PC si collega **in uscita** al server relay di MEFISTOFELE: non servono impostazioni sul router né sul firewall. Note e anteprime passano dal relay cifrate (HTTPS) e **non vengono salvate**.
+
 ## Opzioni da riga di comando
 Windows: `mefistofele.exe --port 8080 --pin 1234 --no-control --no-browser --demo`
 Mac: `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
@@ -93,6 +102,8 @@ Mac: `./mefistofele --port 8080 --pin 1234 --no-control --no-browser --demo`
 - `--no-control` spegne del tutto i comandi dal telefono
 - `--no-browser` non apre la pagina di gestione sul computer
 - `--demo` prova senza PowerPoint
+- `--remote` attiva l'accesso remoto all'avvio
+- `--relay` indirizzo del server relay (predefinito `https://remote.mefistofele.com:8443`)
 
 ## Se qualcosa non va
 - **Il telefono non si collega**: stessa rete? Se il computer ha più schede, scegli quella giusta nella pagina di gestione. Firewall di Windows: consenti le *Reti private* (e quelle pubbliche se il Wi-Fi è visto come pubblico). Su Mac consenti le connessioni in entrata se richiesto.

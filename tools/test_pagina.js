@@ -41,11 +41,11 @@ T("pulsanti Stile/Comandi evidenziati, anteprime no", $("styleb")._cls.has("on")
 // slide in onda
 $("curb").onclick();
 T("slide in onda: attiva", has("showcur") && !has("shownext") && $("curb")._cls.has("on"));
-T("slide in onda: carica /slide/d1/1.png", $("imgcur").src === "/slide/d1/1.png?v=demo.pptx");
+T("slide in onda: carica /slide/d1/1.png", $("imgcur").src === "slide/d1/1.png?v=demo.pptx");
 T("slide in onda: la successiva non viene caricata", !$("imgnext").src);
 // successiva
 $("nextb").onclick();
-T("successiva: carica /slide/d1/2.png", has("shownext") && $("imgnext").src === "/slide/d1/2.png?v=demo.pptx");
+T("successiva: carica /slide/d1/2.png", has("shownext") && $("imgnext").src === "slide/d1/2.png?v=demo.pptx");
 // avanza
 send({ control: true, shows: [sh(2)] });
 T("avanzando: in onda = 2, successiva = 3", $("imgcur").src.includes("/d1/2.png") && $("imgnext").src.includes("/d1/3.png"));
@@ -56,7 +56,7 @@ T("ultima slide: segnaposto 'Last slide' al posto dell'immagine", $("phnext").te
 send({ control: true, shows: [] });
 T("senza presentazione: segnaposto attesa", $("phcur").textContent.includes("Waiting") && $("imgcur").style.display === "none");
 send({ control: true, shows: [sh(1, 4, "d2")] });
-T("nuova presentazione: immagine ricaricata", $("imgcur").src.includes("/slide/d2/1.png") && $("imgcur").style.display === "block");
+T("nuova presentazione: immagine ricaricata", $("imgcur").src.includes("slide/d2/1.png") && $("imgcur").style.display === "block");
 // errore immagine
 $("imgcur").onerror();
 T("errore immagine: messaggio, niente immagine rotta", $("phcur").textContent === "Preview not available" && $("imgcur").style.display === "none");
@@ -95,7 +95,7 @@ T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl")
   const hasD = c => D.body._cls.has(c);
   D.send({ control: true, ui: { style: true, ctl: true, cur: true, next: true }, shows: [sh(1)] });
   T("v2: dispositivo nuovo, tutto abilitato dal PC -> tutto visibile", !hasD("nostyle") && !hasD("noctl") && hasD("showcur") && hasD("shownext"));
-  T("v2: le anteprime si caricano da sole", D.$("imgcur").src.includes("/slide/d1/1.png") && D.$("imgnext").src.includes("/slide/d1/2.png"));
+  T("v2: le anteprime si caricano da sole", D.$("imgcur").src.includes("slide/d1/1.png") && D.$("imgnext").src.includes("slide/d1/2.png"));
   D.send({ control: true, ui: { style: false, ctl: true, cur: false, next: true }, shows: [sh(1)] });
   T("v2: stile spento dal PC -> nascosto e pulsante sparito", hasD("nostyle") && D.$("styleb").style.display === "none");
   T("v2: slide in onda spenta dal PC -> nascosta e pulsante sparito", !hasD("showcur") && D.$("curb").style.display === "none");
@@ -136,7 +136,7 @@ T("--no-control: area comandi nascosta e pulsante Comandi sparito", has("noctl")
     const hasF = c => F.body._cls.has(c);
     F.send({ control: true, ui: U({ bar: false }), shows: [sh(2)] });
     T("fissa: gli elementi scelti compaiono anche se il telefono li aveva nascosti", hasF("showcur") && hasF("shownext") && !hasF("nostyle") && !hasF("noctl") && !hasF("nogoto") && !hasF("nonav"));
-    T("fissa: le anteprime si caricano", F.$("imgcur").src.includes("/slide/d1/2.png") && F.$("imgnext").src.includes("/slide/d1/3.png"));
+    T("fissa: le anteprime si caricano", F.$("imgcur").src.includes("slide/d1/2.png") && F.$("imgnext").src.includes("slide/d1/3.png"));
     F.$("hide").onclick();
     T("fissa: 'Nascondi barra' non ha effetto (nessuna modifica possibile)", !hasF("hidebar"));
     F.send({ control: true, ui: U({ bar: false, style: false, next: false, goto: false }), shows: [sh(2)] });

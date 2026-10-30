@@ -18,6 +18,7 @@ Uso:
     py deckwhisperer.py --port 8080
 """
 import argparse
+import base64
 import json
 import os
 import queue
@@ -65,7 +66,7 @@ CREDITS_HTML = (
     '<b>MEFISTOFELE DeckWhisperer</b> – Remote notes &amp; control for PowerPoint<br><span id="credby">Created and developed by</span> '
     '<a href="https://www.andreabattaglioli.it" target="_blank" rel="noopener">www.andreabattaglioli.it</a> · '
     '<a class="mwtl" href="https://www.mywebtvlive.com" target="_blank" rel="noopener">'
-    '<img src="/static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
+    '<img src="static/mwtl-logo.png" alt="" width="18" height="18">MyWebTvLive.com</a> · Made in Bolognina'
 )
 
 UI_KEYS = ("bar", "style", "cur", "next", "goto", "ctl", "lock")
@@ -380,7 +381,7 @@ def diagnostica_page():
 
 DIAG_PAGE = r"""<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>MEFISTOFELE DeckWhisperer - diagnostica</title>
-<link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
+<link rel="icon" type="image/png" href="static/deckwhisperer-64.png">
 <style>body{font:14px Arial,sans-serif;margin:16px;background:#fff;color:#111}
 pre{background:#f3f3f3;padding:10px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}
 button{font:15px Arial,sans-serif;padding:8px 14px;margin:4px 6px 4px 0;cursor:pointer}</style></head>
@@ -896,7 +897,7 @@ def qr_console(text):
 
 START_PAGE = """<!DOCTYPE html><html lang="en" dir="ltr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__</title>
-<link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
+<link rel="icon" type="image/png" href="static/deckwhisperer-64.png">
 <style>
 :root{--bg:#f4f6f7;--card:#fff;--ink:#14262b;--mut:#5b6b70;--acc:#14434d;--ok:#1b7f4a;--bd:#d9e0e2}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Arial,"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif}
@@ -923,8 +924,10 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 #shows{margin:0;padding-inline-start:18px;color:var(--ink)}#shows li{margin:2px 0}
 .cr{font-size:13px;color:var(--mut);line-height:1.6;text-align:center;margin-top:22px}.cr a{color:var(--acc)}
 .cr img{vertical-align:middle;margin-inline-end:4px}.links{margin-top:10px;font-size:14px}.links a{color:var(--acc)}
+.remrow{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}.remrow img{width:200px;height:200px;border:1px solid var(--bd);border-radius:8px;background:#fff}
+button.stop{background:#8a3b2e}.warnp{color:#a4381f;font-weight:600}.okp{color:var(--ok)}
 </style></head><body><div class="wrap">
-<header><img src="/static/deckwhisperer-192.png" alt="__NAME__"><div><h1>__NAME__</h1>
+<header><img src="static/deckwhisperer-192.png" alt="__NAME__"><div><h1>__NAME__</h1>
 <small><span data-i18n="info_ver">Version</span> __VERSION__ &middot; Remote notes &amp; control for PowerPoint</small></div>
 <a class="guide" id="guide" href="/guida" target="_blank">&#128214; <span data-i18n="g_guide">Guide</span></a></header>
 <div class="grid">
@@ -948,6 +951,14 @@ button{font-size:15px;padding:9px 14px;border:0;border-radius:8px;background:var
 <h2 style="margin-top:14px" data-i18n="shows_title">Presentations in progress</h2><ul id="shows"><li data-i18n="shows_none"></li></ul>
 <div class="links"><a href="/" target="_blank" data-i18n="open_notes">Open the notes page on this PC</a> &middot; <a href="/diagnostica" target="_blank" data-i18n="diag">Diagnostics</a></div>
 </div></div>
+<div class="card" id="remcard" style="margin-top:18px"><h2 data-i18n="r_title">3. Remote access (outside this network)</h2>
+<div class="hint" data-i18n="r_desc"></div>
+<div id="remoff" style="margin-top:12px"><button id="remstart" data-i18n="r_start">Switch on remote access</button></div>
+<div id="remon" style="display:none;margin-top:12px"><div class="remrow"><img id="remqr" alt="QR">
+<div><div class="url" id="remurl" style="font-size:16px"></div>
+<div style="margin-top:10px"><button id="remcopy" data-i18n="r_copy">Copy link</button> <button id="remstop" class="stop" data-i18n="r_stop">Switch off</button></div>
+<div id="remstat" class="hint" style="margin-top:10px"></div><div id="rempin" class="hint warnp"></div></div></div></div>
+<div class="hint" style="margin-top:12px" data-i18n="r_privacy"></div></div>
 <div class="cr">__CREDITS__</div></div>
 <script>
 const I18N = __I18N__;
@@ -1006,7 +1017,22 @@ function drawShows(){
   if (!lastShows.length) { const li = document.createElement("li"); li.textContent = tr("shows_none"); ul.appendChild(li); return; }
   lastShows.forEach(x => { const li = document.createElement("li"); li.textContent = x.title + " - " + tr("slide") + " " + x.index + " / " + x.total; ul.appendChild(li); });
 }
-load(true); applyLang();
+let remUrl = "";
+async function remAct(a){ try { await fetch("/remote", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ action: a }) }); } catch(e) {} remote(); }
+function remote(){
+  fetch("/remote.json").then(r => r.json()).then(d => {
+    $("remoff").style.display = d.active ? "none" : "block"; $("remon").style.display = d.active ? "block" : "none";
+    if (d.active) {
+      $("remurl").textContent = d.url;
+      if (remUrl !== d.url) { remUrl = d.url; $("remqr").src = "/remote-qr.svg?t=" + Date.now(); }
+      $("remstat").textContent = tr("r_st_" + d.status) + (d.status === "error" && d.error ? " (" + d.error + ")" : "");
+      $("rempin").className = "hint " + (d.pin_set ? "okp" : "warnp"); $("rempin").textContent = tr(d.pin_set ? "r_pin_ok" : "r_nopin");
+    } else { remUrl = ""; }
+  }).catch(() => {});
+}
+$("remstart").onclick = () => remAct("start"); $("remstop").onclick = () => remAct("stop");
+$("remcopy").onclick = async () => { try { await navigator.clipboard.writeText(remUrl); } catch(e) {} flash("r_copied"); };
+load(true); applyLang(); remote(); setInterval(remote, 2000);
 shows(); setInterval(shows, 2000);
 </script></body></html>"""
 
@@ -1032,8 +1058,8 @@ def _inline(t):
         url = m.group(2)
         mm = re.search(r"MANUAL-([a-z]{2})\.md$", url)
         if mm:
-            url = "/guida?lang=" + mm.group(1)
-        if not url.startswith(("http://", "https://", "/")):
+            url = "guida?lang=" + mm.group(1)
+        if not url.startswith(("http://", "https://", "/", "guida")):
             return m.group(1)
         return '<a href="%s" target="_blank" rel="noopener">%s</a>' % (url, m.group(1))
     return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", link, t)
@@ -1088,7 +1114,7 @@ def md_to_html(md):
 
 GUIDE_PAGE = """<!DOCTYPE html><html lang="__LANG__" dir="__DIR__"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>__NAME__ - __TITLE__</title>
-<link rel="icon" type="image/png" href="/static/deckwhisperer-64.png">
+<link rel="icon" type="image/png" href="static/deckwhisperer-64.png">
 <style>body{margin:0;background:#f4f6f7;color:#14262b;font:16px/1.6 Segoe UI,Arial,"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif}
 .wrap{max-width:860px;margin:0 auto;padding:18px 16px 40px;background:#fff;min-height:100vh}
 .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #d9e0e2;padding-bottom:10px;margin-bottom:6px}
@@ -1098,7 +1124,7 @@ GUIDE_PAGE = """<!DOCTYPE html><html lang="__LANG__" dir="__DIR__"><head><meta c
 h1{font-size:26px}h2{font-size:21px;margin-top:28px}h3{font-size:17px}
 table{border-collapse:collapse;width:100%;margin:10px 0}th,td{border:1px solid #d9e0e2;padding:7px 10px;text-align:start;vertical-align:top}
 th{background:#eef3f4}code{background:#eef3f4;padding:1px 5px;border-radius:4px;direction:ltr;unicode-bidi:isolate}a{color:#14434d}</style></head><body><div class="wrap">
-<div class="top"><img src="/static/deckwhisperer-64.png" alt=""><b>__NAME__</b>
+<div class="top"><img src="static/deckwhisperer-64.png" alt=""><b>__NAME__</b>
 <span class="sw">__SWITCH__</span></div>
 __BODY__</div></body></html>"""
 
@@ -1112,7 +1138,7 @@ def guide_page(lang):
     else:
         body = "<p>Guide not found.</p>"
     names = I18N["names"]
-    switch = "".join('<a href="/guida?lang=%s"%s>%s</a>' % (c, ' class="cur"' if c == lang else "", html_escape(names.get(c, c)))
+    switch = "".join('<a href="guida?lang=%s"%s>%s</a>' % (c, ' class="cur"' if c == lang else "", html_escape(names.get(c, c)))
                      for c in GUIDE_FILES)
     title = I18N["langs"].get(lang, {}).get("g_guide", "Guide")
     return (GUIDE_PAGE.replace("__LANG__", lang).replace("__DIR__", "rtl" if lang in I18N["rtl"] else "ltr")
@@ -1121,6 +1147,190 @@ def guide_page(lang):
 
 
 # -------------------------------------------------------------------- Server
+# ---------------------------------------------------------------- accesso remoto (relay)
+RELAY_URL = "https://remote.mefistofele.com:8443"   # server di rilancio (da cambiare con --relay)
+REMOTE_GET_OK = (re.compile(r"^/$"), re.compile(r"^/guida$"), re.compile(r"^/favicon\.ico$"), re.compile(r"^/qr\.svg$"),
+                 re.compile(r"^/static/[A-Za-z0-9_.-]{1,60}$"), re.compile(r"^/slide/[A-Za-z0-9_-]{1,32}/\d{1,5}\.png$"))
+REMOTE_FAILS = deque(maxlen=20)       # tentativi di PIN sbagliati arrivati da fuori (istanti)
+REMOTE_FAIL_MAX = 5                   # dopo 5 PIN sbagliati...
+REMOTE_FAIL_WINDOW = 300              # ...in 5 minuti i comandi da fuori si bloccano finche' non passano
+
+
+def remote_locked():
+    """True se da fuori sono stati provati troppi PIN sbagliati da poco."""
+    now = time.time()
+    return sum(1 for t in REMOTE_FAILS if now - t < REMOTE_FAIL_WINDOW) >= REMOTE_FAIL_MAX
+
+
+def remote_state():
+    """Stato inviato ai telefoni remoti: con il PIN sempre richiesto per i comandi; senza PIN, solo lettura."""
+    with COND:
+        st = json.loads(json.dumps(STATE))
+    st["pin_required"] = True
+    st["remote"] = True
+    if not PIN:
+        st["control"] = False
+        st["ui"]["ctl"] = False
+        st["ui"]["goto"] = False
+    return st
+
+
+class RemoteLink:
+    """Collegamento in uscita verso il relay: il PC chiede lavoro e il relay gli passa le richieste dei telefoni."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.active = False
+        self.sid = ""
+        self.key = ""
+        self.status = "off"          # off | starting | online | error
+        self.error = ""
+        self.relay = RELAY_URL
+        self.stop_evt = threading.Event()
+        self.jobs_sem = threading.Semaphore(6)
+
+    def url(self):
+        return ("%s/s/%s/" % (self.relay.rstrip("/"), self.sid)) if self.active else ""
+
+    def info(self):
+        with self.lock:
+            return {"active": self.active, "status": self.status, "error": self.error, "url": self.url(),
+                    "pin_set": bool(PIN), "relay": self.relay}
+
+    def start(self):
+        import secrets
+        with self.lock:
+            if self.active:
+                return
+            self.sid = secrets.token_urlsafe(18)        # 24 caratteri: il "codice" nel link
+            self.key = secrets.token_urlsafe(24)        # chiave segreta che resta solo sul PC
+            self.active = True
+            self.status = "starting"
+            self.error = ""
+            self.stop_evt = threading.Event()
+            ev = self.stop_evt
+        log("Accesso remoto attivato (%s)" % self.relay)
+        threading.Thread(target=self._poll_loop, args=(ev, self.sid, self.key), daemon=True).start()
+        threading.Thread(target=self._state_loop, args=(ev, self.sid, self.key), daemon=True).start()
+
+    def stop(self):
+        with self.lock:
+            if not self.active:
+                return
+            self.active = False
+            self.status = "off"
+            self.error = ""
+            ev, sid, key = self.stop_evt, self.sid, self.key
+        ev.set()
+        with COND:
+            COND.notify_all()
+        try:
+            self._call("POST", "/pc/%s/bye" % sid, key, b"", timeout=5)
+        except Exception:
+            pass
+        log("Accesso remoto disattivato")
+
+    # --- rete
+    def _call(self, method, path, key, body=None, ctype="application/octet-stream", timeout=40):
+        import urllib.request
+        req = urllib.request.Request(self.relay.rstrip("/") + path, data=body, method=method)
+        req.add_header("X-DW-Key", key)
+        req.add_header("User-Agent", "DeckWhisperer/" + APP_VERSION)
+        if body is not None:
+            req.add_header("Content-Type", ctype)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read(), r.headers
+
+    def _set(self, status, error=""):
+        with self.lock:
+            if self.active:
+                self.status, self.error = status, error
+
+    def _poll_loop(self, ev, sid, key):
+        delay = 1.0
+        while not ev.is_set():
+            try:
+                code, data, _ = self._call("GET", "/pc/%s/poll" % sid, key, timeout=40)
+                self._set("online")
+                delay = 1.0
+                if code == 200 and data:
+                    job = json.loads(data.decode("utf-8"))
+                    self.jobs_sem.acquire()
+                    threading.Thread(target=self._serve, args=(sid, key, job), daemon=True).start()
+            except Exception as e:
+                if ev.is_set():
+                    break
+                code = getattr(e, "code", 0)
+                self._set("error", ("HTTP %s" % code) if code else "%s" % type(e).__name__)
+                log("Accesso remoto: %s (riprovo)" % (("HTTP %s" % code) if code else repr(e)[:120]))
+                ev.wait(delay)
+                delay = min(delay * 2, 15.0)
+
+    def _state_loop(self, ev, sid, key):
+        last = -1
+        sent_at = 0.0
+        while not ev.is_set():
+            with COND:
+                if VERSION == last and time.time() - sent_at < 20:
+                    COND.wait(timeout=5)
+                ver = VERSION
+            if ev.is_set():
+                break
+            if ver == last and time.time() - sent_at < 20:
+                continue
+            try:
+                self._call("POST", "/pc/%s/state" % sid, key, json.dumps(remote_state(), ensure_ascii=False).encode("utf-8"),
+                           "application/json", timeout=15)
+                last, sent_at = ver, time.time()
+                self._set("online")
+            except Exception as e:
+                code = getattr(e, "code", 0)
+                self._set("error", ("HTTP %s" % code) if code else "%s" % type(e).__name__)
+                ev.wait(2.0)
+
+    def _serve(self, sid, key, job):
+        """Esegue sul server locale la richiesta di un telefono remoto e rimanda la risposta al relay."""
+        try:
+            status, ctype, body = self._local(job)
+        except Exception as e:
+            status, ctype, body = 502, "text/plain; charset=utf-8", ("Local error: %s" % type(e).__name__).encode("utf-8")
+        finally:
+            self.jobs_sem.release()
+        try:
+            self._call("POST", "/pc/%s/resp/%s?status=%d" % (sid, int(job["id"]), status), key, body, ctype, timeout=20)
+        except Exception as e:
+            log("Accesso remoto: risposta non consegnata (%s)" % type(e).__name__)
+
+    def _local(self, job):
+        import http.client
+        method = str(job.get("method", ""))
+        path = str(job.get("path", ""))
+        route = path.split("?")[0]
+        if method == "GET":
+            ok = any(r.match(route) for r in REMOTE_GET_OK)
+        else:
+            ok = method == "POST" and route == "/cmd"
+        if not ok or len(path) > 300 or any(c in path for c in "\r\n "):
+            return 404, "text/plain; charset=utf-8", b"Not found"
+        body = base64.b64decode(job["body"]) if job.get("body") else None
+        if body is not None and len(body) > 4096:
+            return 413, "text/plain; charset=utf-8", b"Too big"
+        conn = http.client.HTTPConnection("127.0.0.1", PORT, timeout=15)
+        try:
+            hdr = {"X-DW-Remote": "1"}
+            if body is not None:
+                hdr["Content-Type"] = "application/json"
+            conn.request(method, path, body=body, headers=hdr)
+            r = conn.getresponse()
+            data = r.read(6 * 1024 * 1024)
+            return r.status, r.getheader("Content-Type", "application/octet-stream"), data
+        finally:
+            conn.close()
+
+
+REMOTE = RemoteLink()
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -1129,6 +1339,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _is_local(self):
         """True se la richiesta arriva dal PC stesso (le impostazioni si cambiano solo da qui)."""
+        hd = getattr(self, "headers", None)
+        if hd is not None and hd.get("X-DW-Remote"):      # arriva dal relay (telefono fuori rete): mai "locale"
+            return False
         ip = self.client_address[0]
         return ip in ("127.0.0.1", "::1") or ip.startswith("::ffff:127.") or ip in local_ips()
 
@@ -1187,6 +1400,23 @@ class Handler(BaseHTTPRequestHandler):
                 ok = False
             self._json(200 if ok else 400, {"ok": ok})
             return
+        if path == "/remote":
+            if not self._is_local():
+                self._json(403, {"ok": False, "error": "local only"})
+                return
+            try:
+                act = json.loads(raw.decode("utf-8") or "{}").get("action")
+            except Exception:
+                act = None
+            if act == "start":
+                REMOTE.start()
+            elif act == "stop":
+                REMOTE.stop()
+            else:
+                self._json(400, {"ok": False})
+                return
+            self._json(200, dict(REMOTE.info(), ok=True))
+            return
         if path != "/cmd":
             self._json(404, {"ok": False, "error": "not found"})
             return
@@ -1198,7 +1428,17 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self._json(400, {"ok": False, "error": "invalid request"})
             return
+        remote = bool(self.headers.get("X-DW-Remote"))
+        if remote:                              # da fuori rete: PIN sempre obbligatorio e blocco dopo troppi errori
+            if not PIN:
+                self._json(403, {"ok": False, "error": "controls disabled"})
+                return
+            if remote_locked():
+                self._json(429, {"ok": False, "error": "pin"})
+                return
         if PIN and str(body.get("pin", "")) != PIN:
+            if remote:
+                REMOTE_FAILS.append(time.time())
             self._json(403, {"ok": False, "error": "pin"})
             return
         action = body.get("action")
@@ -1245,7 +1485,24 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, "text/html; charset=utf-8", diagnostica_page().encode("utf-8"))
         elif path == "/qr.svg":
-            self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
+            if self.headers.get("X-DW-Remote"):  # richiesta dal relay: il QR e' quello del link remoto
+                url = REMOTE.url()
+                if not url:
+                    self._send(404, "text/plain; charset=utf-8", b"Not found")
+                    return
+                self._send(200, "image/svg+xml", qr_svg(url).encode("utf-8"))
+            else:
+                self._send(200, "image/svg+xml", qr_svg(BASE_URL).encode("utf-8"))
+        elif path in ("/remote.json", "/remote-qr.svg"):
+            if not self._is_local():
+                self._send(403, "text/plain; charset=utf-8", b"Local only")
+                return
+            if path == "/remote.json":
+                self._json(200, REMOTE.info())
+            elif REMOTE.url():
+                self._send(200, "image/svg+xml", qr_svg(REMOTE.url()).encode("utf-8"))
+            else:
+                self._send(404, "text/plain; charset=utf-8", b"Not found")
         elif path in ("/start", "/qr"):
             if not self._is_local():
                 self._send(403, "text/plain; charset=utf-8", "Management page: it only opens on the PC running DeckWhisperer".encode("utf-8"))
@@ -1325,9 +1582,9 @@ PAGE = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MEFISTOFELE DeckWhisperer</title>
-<link rel="icon" type="image/png" sizes="64x64" href="/static/deckwhisperer-64.png">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/deckwhisperer-32.png">
-<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="64x64" href="static/deckwhisperer-64.png">
+<link rel="icon" type="image/png" sizes="32x32" href="static/deckwhisperer-32.png">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png">
 <meta name="theme-color" content="#14434d">
 <style>
   :root { --fg:#ffffff; --bg:#000000; }
@@ -1506,15 +1763,15 @@ PAGE = r"""<!DOCTYPE html>
 </div>
 <div id="infoov">
   <div id="infobox">
-    <img class="logo" src="/static/deckwhisperer-192.png" alt="DeckWhisperer">
+    <img class="logo" src="static/deckwhisperer-192.png" alt="DeckWhisperer">
     <div class="ver"><span id="t_ver">Version</span> __VERSION__</div>
     <div>__CREDITS__</div>
-    <div style="margin-top:8px;font-size:13px"><a id="t_guide" href="/guida" target="_blank">Guide</a> &middot; <a id="t_diag" href="/diagnostica" target="_blank">Diagnostics</a></div>
+    <div style="margin-top:8px;font-size:13px"><a id="t_guide" href="guida" target="_blank">Guide</a> &middot; <a id="t_diag" href="/diagnostica" target="_blank">Diagnostics</a></div>
     <div id="t_close" style="margin-top:12px;color:#888;font-size:12px">Tap to close</div>
   </div>
 </div>
 <div id="qrov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9;align-items:center;justify-content:center">
-  <img src="/qr.svg" alt="QR" style="width:min(80vw,80vh);height:min(80vw,80vh);background:#fff">
+  <img src="qr.svg" alt="QR" style="width:min(80vw,80vh);height:min(80vw,80vh);background:#fff">
 </div>
 
 <script>
@@ -1639,7 +1896,7 @@ function render() {
 function setSlide(img, ph, on, id, index, title, emptyText) {
   if (!on) return;
   if (!id || !index) { img.style.display = "none"; ph.textContent = emptyText; ph.style.display = "flex"; return; }
-  const src = "/slide/" + encodeURIComponent(id) + "/" + index + ".png?v=" + encodeURIComponent(title);
+  const src = "slide/" + encodeURIComponent(id) + "/" + index + ".png?v=" + encodeURIComponent(title);
   if (img.getAttribute("data-src") !== src) { img.setAttribute("data-src", src); img.src = src; }
   ph.style.display = "none"; img.style.display = "block";
 }
@@ -1675,7 +1932,7 @@ async function sendCmd(action, n, retry) {
   const cur = currentShow();
   if (!cur) { msg(tr("m_nopres")); return; }
   try {
-    const r = await fetch("/cmd", { method:"POST", headers:{ "Content-Type":"application/json" },
+    const r = await fetch("cmd", { method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ id: cur.id, action: action, n: n, pin: pin }) });
     if (r.status === 403) {
       let err = ""; try { err = (await r.json()).error; } catch(e) {}
@@ -1794,7 +2051,7 @@ $("sctl").onclick = () => $("ctlb").onclick();
 
 /* ---- collegamento in tempo reale ---- */
 function connect() {
-  const es = new EventSource("/events");
+  const es = new EventSource("events");
   es.onmessage = e => { try { st = JSON.parse(e.data); applyLang(); applyCtl(); render(); } catch(err) {} };
   es.onerror = () => { $("dot").className = ""; };
 }
@@ -1820,7 +2077,11 @@ def main():
     ap.add_argument("--no-control", action="store_true", help="disabilita i comandi dal telefono")
     ap.add_argument("--demo", action="store_true", help="simula presentazioni (senza PowerPoint)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the management page on the PC")
+    ap.add_argument("--relay", default="", help="relay address for remote access (default %s)" % RELAY_URL)
+    ap.add_argument("--remote", action="store_true", help="switch remote access on at start")
     args = ap.parse_args()
+    if args.relay:
+        REMOTE.relay = args.relay.strip().rstrip("/")
     NO_CONTROL = bool(args.no_control)
     DEMO_MODE = bool(args.demo)
     saved_pin = load_settings()                  # scelte fatte l'ultima volta dalla pagina di avvio
@@ -1900,6 +2161,8 @@ def main():
     print(" Powered by www.mywebtvlive.com - Made in Bolognina")
 
     log("Avvio %s %s - indirizzo %s" % (APP_NAME, APP_VERSION, BASE_URL))
+    if args.remote:
+        REMOTE.start()
     if not args.no_browser:
         try:
             webbrowser.open("http://localhost:%d/start" % port)
