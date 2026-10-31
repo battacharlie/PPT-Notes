@@ -19,6 +19,11 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 **Releases** → `mefistofele.exe` (Windows 10/11 + PowerPoint) e `mefistofele-mac.zip` (macOS 12+ + PowerPoint per Mac). Ogni release contiene anche `SHA256SUMS.txt` e i sei manuali `MANUAL-xx.md`.
 Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente, in fondo **mefistofele-windows** e **mefistofele-mac**.
 
+## Novità della 4.2 / What's new in 4.2
+- **Tastiera sempre su PowerPoint / Keyboard stays on PowerPoint** (Windows): dopo ogni anteprima il programma restituisce il fuoco a PowerPoint se lo aveva, così non serve più un click del mouse per far tornare a funzionare la tastiera. Non interviene se passi a un altro programma. Si disattiva dalla pagina di gestione ("Mantieni PowerPoint in primo piano") / after each preview the program gives the focus back to PowerPoint if it had it, so a mouse click is no longer needed to get the keyboard working again. It does not interfere if you switch to another program. Can be switched off on the management page ("Keep PowerPoint in front").
+- Registro: "Fuoco restituito a PowerPoint dopo un'anteprima" la prima volta che succede / Log: "Fuoco restituito a PowerPoint dopo un'anteprima" the first time it happens.
+- Correzione disponibile anche per la serie 3 (3.4) / The fix is also available for the 3 series (3.4).
+
 ## Novità della 4.1 / What's new in 4.1
 - **Click ravvicinati più affidabili / More reliable fast clicks**: i comandi dal telefono hanno la precedenza sulle anteprime delle slide, non vengono più scartati dopo 2 secondi e "avanti/indietro" consecutivi vengono sommati in un solo passaggio / commands from the phone now take priority over slide previews, are no longer dropped after 2 seconds, and consecutive next/previous clicks are added up into a single step.
 - **Registro più utile / Better log**: `mefistofele.log` ora scrive i comandi scartati, i riepiloghi dei click ravvicinati e le anteprime lente / now logs discarded commands, summaries of fast clicks and slow previews.
@@ -33,8 +38,8 @@ Con presentazioni di oltre 10 slide e click molto ravvicinati possono ancora ver
 - Note e anteprime passano dal relay cifrate (HTTPS) e non vengono salvate; il relay inoltra solo i percorsi consentiti / Notes and previews cross the relay encrypted (HTTPS) and are not stored; the relay only forwards allowed paths.
 - Opzioni `--remote` e `--relay` / `--remote` and `--relay` options.
 
-### Differenze tra la 3.3 e la 4.x / 3.3 vs 4.x
-| | 3.3 | 4.x |
+### Differenze tra la 3.4 e la 4.x / 3.4 vs 4.x
+| | 3.4 | 4.x |
 |---|---|---|
 | Telefoni nella stessa rete del computer / Phones on the computer's network | Sì / Yes | Sì / Yes |
 | Telefoni fuori dalla rete / Phones outside the network | No | Sì, accesso remoto facoltativo / Yes, optional remote access |
@@ -44,7 +49,7 @@ Con presentazioni di oltre 10 slide e click molto ravvicinati possono ancora ver
 | Server di terze parti / Third-party server | No | Solo se attivi l'accesso remoto: relay MEFISTOFELE / Only if you switch remote access on: the MEFISTOFELE relay |
 | Aggiornamento / Update | – | Si scarica di nuovo il file, le scelte restano / Download the file again, your choices are kept |
 
-La 3.3 (serie senza accesso remoto) resta scaricabile dalla pagina [Releases](https://github.com/battacharlie/PPT-Notes/releases/tag/v3.3) per chi non vuole alcun collegamento verso l'esterno / 3.3 remains available on the Releases page for anyone who wants no outbound connection at all.
+La 3.4 (serie senza accesso remoto) resta scaricabile dalla pagina [Releases](https://github.com/battacharlie/PPT-Notes/releases/tag/v3.4) per chi non vuole alcun collegamento verso l'esterno / 3.4 remains available on the Releases page for anyone who wants no outbound connection at all.
 
 ## Novità della 3.2 / What's new in 3.2
 - Pagina remota: con la barra aperta è sempre visibile per intero e il resto della pagina scende / Remote page: the open toolbar is fully visible and the rest of the page moves down.

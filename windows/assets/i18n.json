@@ -114,7 +114,9 @@
    "r_st_off": "Off",
    "r_nopin": "No PIN set: remote phones can only read the notes. Set a PIN above to let them use the controls.",
    "r_pin_ok": "Controls from outside need the PIN above.",
-   "r_privacy": "The link is private and changes every time you switch remote access on. Share it only with the people who need it. Switching off (or closing the program) ends access immediately."
+   "r_privacy": "The link is private and changes every time you switch remote access on. Share it only with the people who need it. Switching off (or closing the program) ends access immediately.",
+   "o_focus": "Keep PowerPoint in front",
+   "o_focus_d": "After a slide preview is made, gives the keyboard focus back to PowerPoint if it had it. Does not interfere if you switch to another program."
   },
   "it": {
    "present": "Presentazione",
@@ -219,7 +221,9 @@
    "r_st_off": "Spento",
    "r_nopin": "Nessun PIN: i telefoni remoti possono solo leggere le note. Imposta un PIN qui sopra per far usare i comandi.",
    "r_pin_ok": "I comandi da fuori richiedono il PIN impostato qui sopra.",
-   "r_privacy": "Il link è privato e cambia ogni volta che attivi l'accesso remoto. Condividilo solo con chi serve. Disattivando (o chiudendo il programma) l'accesso termina subito."
+   "r_privacy": "Il link è privato e cambia ogni volta che attivi l'accesso remoto. Condividilo solo con chi serve. Disattivando (o chiudendo il programma) l'accesso termina subito.",
+   "o_focus": "Mantieni PowerPoint in primo piano",
+   "o_focus_d": "Dopo ogni anteprima delle slide restituisce il fuoco della tastiera a PowerPoint se lo aveva. Non interviene se passi a un altro programma."
   },
   "fr": {
    "present": "Présentation",
@@ -324,7 +328,9 @@
    "r_st_off": "Désactivé",
    "r_nopin": "Aucun PIN : les téléphones distants ne peuvent que lire les notes. Définissez un PIN ci-dessus pour autoriser les commandes.",
    "r_pin_ok": "Les commandes depuis l'extérieur demandent le PIN défini ci-dessus.",
-   "r_privacy": "Le lien est privé et change à chaque activation. Ne le partagez qu'avec les personnes concernées. Désactiver (ou fermer le programme) coupe l'accès immédiatement."
+   "r_privacy": "Le lien est privé et change à chaque activation. Ne le partagez qu'avec les personnes concernées. Désactiver (ou fermer le programme) coupe l'accès immédiatement.",
+   "o_focus": "Garder PowerPoint au premier plan",
+   "o_focus_d": "Après chaque aperçu de diapositive, rend le focus du clavier à PowerPoint s'il l'avait. N'intervient pas si vous passez à un autre programme."
   },
   "es": {
    "present": "Presentación",
@@ -429,7 +435,9 @@
    "r_st_off": "Desactivado",
    "r_nopin": "Sin PIN: los teléfonos remotos solo pueden leer las notas. Define un PIN arriba para permitir los controles.",
    "r_pin_ok": "Los controles desde fuera piden el PIN definido arriba.",
-   "r_privacy": "El enlace es privado y cambia cada vez que activas el acceso remoto. Compártelo solo con quien lo necesite. Al desactivar (o cerrar el programa) el acceso termina de inmediato."
+   "r_privacy": "El enlace es privado y cambia cada vez que activas el acceso remoto. Compártelo solo con quien lo necesite. Al desactivar (o cerrar el programa) el acceso termina de inmediato.",
+   "o_focus": "Mantener PowerPoint en primer plano",
+   "o_focus_d": "Tras cada vista previa de diapositiva, devuelve el foco del teclado a PowerPoint si lo tenía. No interviene si cambias a otro programa."
   },
   "ar": {
    "present": "العرض التقديمي",
@@ -534,7 +542,9 @@
    "r_st_off": "متوقف",
    "r_nopin": "لا يوجد PIN: يمكن للهواتف البعيدة قراءة الملاحظات فقط. عيّن PIN أعلاه للسماح بأزرار التحكم.",
    "r_pin_ok": "أزرار التحكم من الخارج تتطلب الـ PIN المحدد أعلاه.",
-   "r_privacy": "الرابط خاص ويتغيّر في كل مرة تفعّل فيها الوصول عن بُعد. شاركه فقط مع من يحتاجه. عند الإيقاف (أو إغلاق البرنامج) ينتهي الوصول فورًا."
+   "r_privacy": "الرابط خاص ويتغيّر في كل مرة تفعّل فيها الوصول عن بُعد. شاركه فقط مع من يحتاجه. عند الإيقاف (أو إغلاق البرنامج) ينتهي الوصول فورًا.",
+   "o_focus": "إبقاء PowerPoint في المقدمة",
+   "o_focus_d": "بعد كل معاينة للشرائح يعيد تركيز لوحة المفاتيح إلى PowerPoint إن كان عليه. لا يتدخل إذا انتقلت إلى برنامج آخر."
   },
   "zh": {
    "present": "演示文稿",
@@ -639,7 +649,9 @@
    "r_st_off": "已关闭",
    "r_nopin": "未设置 PIN：远程手机只能查看备注。请在上方设置 PIN 以允许使用控制按钮。",
    "r_pin_ok": "来自外部的控制需要上方设置的 PIN。",
-   "r_privacy": "该链接是私密的，每次开启远程访问都会变化。请仅分享给需要的人。关闭（或退出程序）后访问立即结束。"
+   "r_privacy": "该链接是私密的，每次开启远程访问都会变化。请仅分享给需要的人。关闭（或退出程序）后访问立即结束。",
+   "o_focus": "保持 PowerPoint 在前台",
+   "o_focus_d": "每次生成幻灯片预览后，如果键盘焦点原本在 PowerPoint 上，就把焦点还给它。如果您切换到其他程序，则不会干预。"
   }
  }
 }
