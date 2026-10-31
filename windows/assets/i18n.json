@@ -116,7 +116,11 @@
    "r_pin_ok": "Controls from outside need the PIN above.",
    "r_privacy": "The link is private and changes every time you switch remote access on. Share it only with the people who need it. Switching off (or closing the program) ends access immediately.",
    "o_focus": "Keep PowerPoint in front",
-   "o_focus_d": "After a slide preview is made, gives the keyboard focus back to PowerPoint if it had it. Does not interfere if you switch to another program."
+   "o_focus_d": "After a slide preview is made, gives the keyboard focus back to PowerPoint if it had it. Does not interfere if you switch to another program.",
+   "o_preload": "Prepare previews in advance",
+   "o_preload_d": "Exports all slide previews when the presentation is opened, before the show starts, so nothing is exported during the presentation (Windows).",
+   "o_focuslog": "Diagnostics: log window focus",
+   "o_focuslog_d": "Writes to the log every change of the window in front (program and title) with date and time, plus the commands and previews. Use it only to find problems: titles of your windows are saved in the log (Windows)."
   },
   "it": {
    "present": "Presentazione",
@@ -223,7 +227,11 @@
    "r_pin_ok": "I comandi da fuori richiedono il PIN impostato qui sopra.",
    "r_privacy": "Il link è privato e cambia ogni volta che attivi l'accesso remoto. Condividilo solo con chi serve. Disattivando (o chiudendo il programma) l'accesso termina subito.",
    "o_focus": "Mantieni PowerPoint in primo piano",
-   "o_focus_d": "Dopo ogni anteprima delle slide restituisce il fuoco della tastiera a PowerPoint se lo aveva. Non interviene se passi a un altro programma."
+   "o_focus_d": "Dopo ogni anteprima delle slide restituisce il fuoco della tastiera a PowerPoint se lo aveva. Non interviene se passi a un altro programma.",
+   "o_preload": "Prepara le anteprime in anticipo",
+   "o_preload_d": "Esporta tutte le anteprime delle slide quando la presentazione è aperta, prima che inizi, così durante la presentazione non si esporta nulla (Windows).",
+   "o_focuslog": "Diagnostica: registra i cambi di finestra",
+   "o_focuslog_d": "Scrive nel registro ogni cambio della finestra in primo piano (programma e titolo) con data e ora, insieme a comandi e anteprime. Da usare solo per cercare problemi: i titoli delle tue finestre vengono salvati nel registro (Windows)."
   },
   "fr": {
    "present": "Présentation",
@@ -330,7 +338,11 @@
    "r_pin_ok": "Les commandes depuis l'extérieur demandent le PIN défini ci-dessus.",
    "r_privacy": "Le lien est privé et change à chaque activation. Ne le partagez qu'avec les personnes concernées. Désactiver (ou fermer le programme) coupe l'accès immédiatement.",
    "o_focus": "Garder PowerPoint au premier plan",
-   "o_focus_d": "Après chaque aperçu de diapositive, rend le focus du clavier à PowerPoint s'il l'avait. N'intervient pas si vous passez à un autre programme."
+   "o_focus_d": "Après chaque aperçu de diapositive, rend le focus du clavier à PowerPoint s'il l'avait. N'intervient pas si vous passez à un autre programme.",
+   "o_preload": "Préparer les aperçus à l'avance",
+   "o_preload_d": "Exporte tous les aperçus des diapositives quand la présentation est ouverte, avant le début, pour ne rien exporter pendant la présentation (Windows).",
+   "o_focuslog": "Diagnostic : journal des changements de fenêtre",
+   "o_focuslog_d": "Écrit dans le journal chaque changement de fenêtre au premier plan (programme et titre) avec date et heure, ainsi que les commandes et les aperçus. À utiliser seulement pour chercher un problème : les titres de vos fenêtres sont enregistrés dans le journal (Windows)."
   },
   "es": {
    "present": "Presentación",
@@ -437,7 +449,11 @@
    "r_pin_ok": "Los controles desde fuera piden el PIN definido arriba.",
    "r_privacy": "El enlace es privado y cambia cada vez que activas el acceso remoto. Compártelo solo con quien lo necesite. Al desactivar (o cerrar el programa) el acceso termina de inmediato.",
    "o_focus": "Mantener PowerPoint en primer plano",
-   "o_focus_d": "Tras cada vista previa de diapositiva, devuelve el foco del teclado a PowerPoint si lo tenía. No interviene si cambias a otro programa."
+   "o_focus_d": "Tras cada vista previa de diapositiva, devuelve el foco del teclado a PowerPoint si lo tenía. No interviene si cambias a otro programa.",
+   "o_preload": "Preparar las vistas previas por adelantado",
+   "o_preload_d": "Exporta todas las vistas previas de las diapositivas cuando la presentación está abierta, antes de empezar, para no exportar nada durante la presentación (Windows).",
+   "o_focuslog": "Diagnóstico: registrar cambios de ventana",
+   "o_focuslog_d": "Escribe en el registro cada cambio de la ventana en primer plano (programa y título) con fecha y hora, junto con los comandos y las vistas previas. Úsalo solo para buscar problemas: los títulos de tus ventanas se guardan en el registro (Windows)."
   },
   "ar": {
    "present": "العرض التقديمي",
@@ -544,7 +560,11 @@
    "r_pin_ok": "أزرار التحكم من الخارج تتطلب الـ PIN المحدد أعلاه.",
    "r_privacy": "الرابط خاص ويتغيّر في كل مرة تفعّل فيها الوصول عن بُعد. شاركه فقط مع من يحتاجه. عند الإيقاف (أو إغلاق البرنامج) ينتهي الوصول فورًا.",
    "o_focus": "إبقاء PowerPoint في المقدمة",
-   "o_focus_d": "بعد كل معاينة للشرائح يعيد تركيز لوحة المفاتيح إلى PowerPoint إن كان عليه. لا يتدخل إذا انتقلت إلى برنامج آخر."
+   "o_focus_d": "بعد كل معاينة للشرائح يعيد تركيز لوحة المفاتيح إلى PowerPoint إن كان عليه. لا يتدخل إذا انتقلت إلى برنامج آخر.",
+   "o_preload": "تجهيز المعاينات مسبقًا",
+   "o_preload_d": "يصدّر جميع معاينات الشرائح عند فتح العرض وقبل بدئه، فلا يتم تصدير أي شيء أثناء العرض (Windows).",
+   "o_focuslog": "التشخيص: تسجيل تغيّر النافذة",
+   "o_focuslog_d": "يكتب في السجل كل تغيير في النافذة الأمامية (البرنامج والعنوان) مع التاريخ والوقت، إضافةً إلى الأوامر والمعاينات. استخدمه فقط للبحث عن المشكلات: تُحفظ عناوين نوافذك في السجل (Windows)."
   },
   "zh": {
    "present": "演示文稿",
@@ -651,7 +671,11 @@
    "r_pin_ok": "来自外部的控制需要上方设置的 PIN。",
    "r_privacy": "该链接是私密的，每次开启远程访问都会变化。请仅分享给需要的人。关闭（或退出程序）后访问立即结束。",
    "o_focus": "保持 PowerPoint 在前台",
-   "o_focus_d": "每次生成幻灯片预览后，如果键盘焦点原本在 PowerPoint 上，就把焦点还给它。如果您切换到其他程序，则不会干预。"
+   "o_focus_d": "每次生成幻灯片预览后，如果键盘焦点原本在 PowerPoint 上，就把焦点还给它。如果您切换到其他程序，则不会干预。",
+   "o_preload": "提前准备预览",
+   "o_preload_d": "在演示文稿打开后、放映开始前导出全部幻灯片预览，这样放映期间不再导出任何内容（Windows）。",
+   "o_focuslog": "诊断：记录窗口焦点变化",
+   "o_focuslog_d": "在日志中记录前台窗口的每次变化（程序和标题），带日期和时间，同时记录命令和预览。仅用于排查问题：您的窗口标题会保存在日志中（Windows）。"
   }
  }
 }

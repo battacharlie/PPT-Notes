@@ -235,6 +235,9 @@ jobs:
             | `mefistofele-mac.zip` | macOS 12+ + PowerPoint for Mac |
             | `MANUAL-xx.md` | Manual: [English](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-en.md) · [Italiano](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-it.md) · [Français](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-fr.md) · [Español](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-es.md) · [العربية](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-ar.md) · [中文](https://github.com/${{ github.repository }}/blob/main/docs/MANUAL-zh.md) |
 
+            ### What's new in 4.3
+            - **Previews prepared in advance** (Windows): the previews of all slides are exported as soon as the presentation is open in PowerPoint (one slide at a time, in the background), before the show starts, not during it. During the show the phone gets ready-made images and PowerPoint is no longer disturbed. If the presentation changes (new save or slide count) the previews are redone; unsaved edits are not included. Switch it off on the management page ("Prepare previews in advance").
+
             ### What's new in 4.2
             - **Keyboard stays on PowerPoint** (Windows): after each slide preview the program gives the keyboard focus back to PowerPoint if it had it, so a mouse click is no longer needed to get the keyboard working again. It does not interfere if you switch to another program. Switch it off on the management page ("Keep PowerPoint in front") if you do not want it.
 
@@ -248,9 +251,9 @@ jobs:
             - Notes and previews cross the MEFISTOFELE relay (`remote.mefistofele.com`) encrypted over HTTPS and are not stored.
             - New options `--remote` and `--relay`.
 
-            ### 3.4 or 4.2?
+            ### 3.4 or 4.3?
             - **3.4**: phones on the same network only; nothing ever leaves your network. Available in the Releases page.
-            - **4.2**: everything in 3.4, plus optional remote access.
+            - **4.3**: everything in 3.4, plus optional remote access.
 
             **How to use**: run the program; the management page opens in your browser with a QR code. Scan it with your phone (same Wi-Fi, or use remote access from outside), pick the language, the network adapter and what the phone should show, then start your slide show in PowerPoint.
             Windows: if it says "Windows protected your PC": *More info → Run anyway*; allow **Private networks**.
