@@ -77,6 +77,7 @@ LANG = "en"                                  # lingua predefinita dei telefoni (
 PORT = 8080              # cosa possono vedere i telefoni (scelto dal PC)
 NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
 SETTINGS_LOCK = threading.Lock()
+PRELOAD = True                                # prepara tutte le anteprime prima della presentazione
 FOCUS_KEEP = True                             # dopo ogni anteprima rida il fuoco a PowerPoint se era suo
 def load_i18n():
     """Traduzioni dell'interfaccia (assets/i18n.json): inglese, italiano, francese, spagnolo, arabo, cinese."""
@@ -180,10 +181,12 @@ def load_settings():
                 data = json.load(f)
         except Exception:
             continue
-        global NIC_IP, LANG, FOCUS_KEEP
+        global NIC_IP, LANG, FOCUS_KEEP, PRELOAD
         ui = data.get("ui", {})
         if isinstance(data.get("focus"), bool):
             FOCUS_KEEP = data["focus"]
+        if isinstance(data.get("preload"), bool):
+            PRELOAD = data["preload"]
         for k in UI_KEYS:
             if isinstance(ui.get(k), bool):
                 UI[k] = ui[k]
@@ -196,7 +199,7 @@ def load_settings():
 
 
 def save_settings():
-    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG, "focus": FOCUS_KEEP}, ensure_ascii=False, indent=1)
+    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG, "focus": FOCUS_KEEP, "preload": PRELOAD}, ensure_ascii=False, indent=1)
     for pth in settings_paths():
         try:
             with open(pth, "w", encoding="utf-8") as f:
@@ -210,7 +213,7 @@ def save_settings():
 
 def apply_settings(body):
     """Applica le scelte arrivate dalla pagina di avvio. Ritorna False se non valide."""
-    global PIN, NIC_IP, LANG, FOCUS_KEEP
+    global PIN, NIC_IP, LANG, FOCUS_KEEP, PRELOAD
     ui = body.get("ui")
     if not isinstance(ui, dict) or any(k in ui and not isinstance(ui[k], bool) for k in UI_KEYS):
         return False
@@ -224,7 +227,8 @@ def apply_settings(body):
     if lang not in LANG_CODES:
         return False
     focus = body.get("focus", FOCUS_KEEP)
-    if not isinstance(focus, bool):
+    preload = body.get("preload", PRELOAD)
+    if not isinstance(focus, bool) or not isinstance(preload, bool):
         return False
     with SETTINGS_LOCK:
         for k in UI_KEYS:
@@ -234,6 +238,7 @@ def apply_settings(body):
         NIC_IP = nic
         LANG = lang
         FOCUS_KEEP = focus
+        PRELOAD = preload
         save_settings()
     update_base_url()
     refresh_state()
@@ -525,6 +530,91 @@ def cache_clear():
         SLIDE_CACHE.clear()
 
 
+PRE_CACHE = OrderedDict()      # (firma presentazione, numero slide) -> PNG preparato prima della presentazione
+PRE_MAX = 400
+PRE_NEXT = {}                  # firma -> prossima slide da preparare
+PRE_T0 = {}
+
+
+def pres_sig(pres):
+    """Firma di una presentazione: file, numero di slide e data di salvataggio (se cambiano, si rifanno le anteprime)."""
+    name = str(pres.FullName)
+    total = int(pres.Slides.Count)
+    try:
+        mt = int(os.path.getmtime(name))
+    except OSError:
+        mt = 0
+    return "%s|%d|%d" % (name, total, mt), total
+
+
+def pre_get(sig, index):
+    with SLIDE_LOCK:
+        v = PRE_CACHE.get((sig, index))
+        if v is not None:
+            PRE_CACHE.move_to_end((sig, index))
+        return v
+
+
+def pre_put(sig, index, data):
+    with SLIDE_LOCK:
+        PRE_CACHE[(sig, index)] = data
+        PRE_CACHE.move_to_end((sig, index))
+        while len(PRE_CACHE) > PRE_MAX:
+            PRE_CACHE.popitem(last=False)
+
+
+def export_png(pres, index, w=960):
+    """Esporta una slide in PNG e ne ritorna i byte (o solleva l'errore)."""
+    try:
+        h = int(round(w * float(pres.PageSetup.SlideHeight) / float(pres.PageSetup.SlideWidth)))
+    except Exception:
+        h = 540
+    path = os.path.join(tempfile.gettempdir(), "DeckWhisperer_%d_pre%d.png" % (os.getpid(), index))
+    try:
+        pres.Slides(index).Export(path, "PNG", w, h)
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            with open(path, "rb") as f:
+                return f.read()
+        raise RuntimeError("image file not created")
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def preload_step(app):
+    """Prepara UNA slide delle presentazioni aperte (mai durante una presentazione in onda: e' li' che
+    l'export toglie il fuoco a PowerPoint). Ritorna True se ha esportato qualcosa."""
+    if not PRELOAD:
+        return False
+    if int(app.SlideShowWindows.Count) > 0:
+        return False
+    for i in range(1, int(app.Presentations.Count) + 1):
+        try:
+            pres = app.Presentations(i)
+            sig, total = pres_sig(pres)
+        except Exception:
+            continue
+        n = PRE_NEXT.get(sig, 1)
+        if n > total:
+            continue
+        if n == 1:
+            PRE_T0[sig] = time.time()
+            log("Anteprime: preparo %d slide di %s" % (total, sig.split("|")[0].replace("\\", "/").split("/")[-1]))
+        try:
+            pre_put(sig, n, export_png(pres, n))
+        except Exception as e:
+            PRE_NEXT[sig] = total + 1
+            log("Anteprime in anticipo non riuscite (%s: %s): verranno preparate durante la presentazione" % (type(e).__name__, e))
+            return True
+        PRE_NEXT[sig] = n + 1
+        if n == total:
+            log("Anteprime pronte: %s, %d slide in %.0f s" % (sig.split("|")[0].replace("\\", "/").split("/")[-1], total, time.time() - PRE_T0.get(sig, time.time())))
+        return True
+    return False
+
+
 def export_slide(app, job):
     """Esporta una slide in PNG (va chiamata solo dal thread che usa COM).
     Se fallisce, il motivo resta in job["error"] e viene mostrato sulla pagina."""
@@ -541,6 +631,13 @@ def export_slide(app, job):
             total = int(pres.Slides.Count)
             if not 1 <= job["index"] <= total:
                 job["error"] = "slide %d fuori intervallo (1-%d)" % (job["index"], total)
+                break
+            try:
+                data = pre_get(pres_sig(pres)[0], job["index"])    # gia' preparata prima della presentazione?
+            except Exception:
+                data = None
+            if data:
+                job["error"] = ""
                 break
             w = 960
             try:
@@ -721,6 +818,7 @@ def poll_powerpoint(interval):
                 shows = read_shows(app)
             else:
                 cache_clear()
+                preload_step(app)
         except Exception:
             # PowerPoint chiuso o COM momentaneamente occupato: ricollega al giro dopo
             app = None
@@ -1098,6 +1196,7 @@ button.stop{background:#8a3b2e}.warnp{color:#a4381f;font-weight:600}.okp{color:v
 <label class="opt"><input type="checkbox" id="u_next"><div><b data-i18n="o_next">Next slide</b><span data-i18n="o_next_d"></span></div></label>
 <label class="opt"><input type="checkbox" id="u_goto"><div><b data-i18n="o_goto">Go to slide</b><span data-i18n="o_goto_d"></span></div></label>
 <label class="opt"><input type="checkbox" id="u_ctl"><div><b data-i18n="o_ctl">Navigation</b><span id="ctl_d" data-i18n="o_ctl_d"></span></div></label>
+<label class="opt" id="preloadopt"><input type="checkbox" id="u_preload"><div><b data-i18n="o_preload">Prepare previews in advance</b><span data-i18n="o_preload_d"></span></div></label>
 <label class="opt" id="focusopt"><input type="checkbox" id="u_focus"><div><b data-i18n="o_focus">Keep PowerPoint in front</b><span data-i18n="o_focus_d"></span></div></label>
 <label class="opt lockopt"><input type="checkbox" id="u_lock"><div><b data-i18n="o_lock">Lock remote screen</b><span data-i18n="o_lock_d"></span></div></label>
 <div class="pin"><label for="pin"><b data-i18n="pin_label">PIN for the controls (optional)</b></label>
@@ -1136,7 +1235,7 @@ async function save(){
   const ui = {}; K.forEach(k => { ui[k] = $("u_" + k).checked; });
   try {
     const r = await fetch("/settings", { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value, focus: $("u_focus").checked }) });
+      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value, focus: $("u_focus").checked, preload: $("u_preload").checked }) });
     flash(r.ok ? "saved" : "invalid");
     if (r.ok) { lang = $("langsel").value; applyLang(); load(false); }
   } catch(e) { flash("unreach"); }
@@ -1147,6 +1246,7 @@ function load(first){
       K.forEach(k => { $("u_" + k).checked = k === "lock" ? d.ui[k] === true : d.ui[k] !== false; });
       $("pin").value = d.pin || "";
       $("u_focus").checked = d.focus !== false; $("focusopt").style.display = d.focus_ok === false ? "none" : "";
+      $("u_preload").checked = d.preload !== false; $("preloadopt").style.display = d.preload_ok === false ? "none" : "";
       const sel = $("nic"); sel.innerHTML = ""; autoIp = d.auto_ip || "";
       const auto = document.createElement("option"); auto.value = ""; sel.appendChild(auto);
       d.nics.forEach(n => { const o = document.createElement("option"); o.value = n.ip; o.textContent = n.name + " - " + n.ip; sel.appendChild(o); });
@@ -1161,7 +1261,7 @@ function load(first){
   }).catch(() => flash("unreach"));
 }
 K.forEach(k => { $("u_" + k).onchange = save; });
-$("u_focus").onchange = save;
+$("u_focus").onchange = save; $("u_preload").onchange = save;
 $("nic").onchange = save; $("langsel").onchange = save;
 $("savepin").onclick = save;
 $("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
@@ -1679,7 +1779,8 @@ class Handler(BaseHTTPRequestHandler):
                        json.dumps({"ui": UI, "pin": PIN, "no_control": NO_CONTROL, "url": BASE_URL,
                                    "nics": list_nics(), "nic": NIC_IP, "auto_ip": primary_ip(),
                                    "lang": LANG, "langs": I18N["names"],
-                                   "focus": FOCUS_KEEP, "focus_ok": sys.platform == "win32"}).encode("utf-8"))
+                                   "focus": FOCUS_KEEP, "focus_ok": sys.platform == "win32",
+                                   "preload": PRELOAD, "preload_ok": sys.platform == "win32"}).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))

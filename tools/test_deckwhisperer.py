@@ -298,6 +298,67 @@ post("/settings", {"ui": {"bar": True}, "focus": True})
 check("fuoco: valore non booleano rifiutato", post("/settings", {"ui": {"bar": True}, "focus": "si"})[0] == 400)
 check("fuoco: opzione presente nella pagina di gestione e in tutte le lingue", b'id="u_focus"' in get("/start")[3] and all(("o_focus" in m.I18N["langs"][l]) for l in m.I18N["langs"]))
 
+# ---- anteprime preparate in anticipo (4.3)
+class PSlides:
+    def __init__(self, n): self.Count = n; self.exports = []
+    def __call__(self, i):
+        outer = self
+        class S:
+            def Export(self_, path, fmt, w, h):
+                outer.exports.append(i); open(path, "wb").write(b"PNG-pre-%d" % i)
+        return S()
+class PPres:
+    def __init__(self, name, n):
+        self.FullName = name; self.Slides = PSlides(n)
+        class PS: SlideWidth = 720.0; SlideHeight = 540.0
+        self.PageSetup = PS
+class PWin:
+    def __init__(self, pres, hwnd=555):
+        self.Presentation = pres; self.HWND = hwnd
+        class V: CurrentShowPosition = 1
+        self.View = V
+class PApp:
+    def __init__(self, pres_list): self.pl = pres_list; self.shows = []; self.Presentations = self; self.SlideShowWindows = type("W", (), {"Count": 0, "__call__": lambda s, i: None})()
+    @property
+    def Count(self): return len(self.pl)
+    def __call__(self, i): return self.pl[i-1]
+    def start(self, pres):
+        sw = self.shows
+        sw.append(PWin(pres))
+        self.SlideShowWindows = type("W", (), {"Count": 1, "__call__": lambda s, i: sw[i-1]})()
+pp = PPres(os.path.join(tempfile.gettempdir(), "deck-test.pptx"), 4); papp = PApp([pp])
+m.PRE_CACHE.clear(); m.PRE_NEXT.clear(); m.PRELOAD = True
+passi = 0
+while m.preload_step(papp): passi += 1
+check("anteprime in anticipo: una slide per passo, tutte e 4 preparate", passi == 4 and pp.Slides.exports == [1, 2, 3, 4] and len(m.PRE_CACHE) == 4)
+check("anteprime in anticipo: a lavoro finito non esporta piu'", m.preload_step(papp) is False and pp.Slides.exports == [1, 2, 3, 4])
+check("anteprime in anticipo: avvisi nel registro (inizio e fine)", any("Anteprime: preparo 4 slide" in l for l in m.LOG_LINES) and any("Anteprime pronte" in l for l in m.LOG_LINES))
+papp.start(pp); sid = m.win_id(papp.shows[0], 1); m.cache_clear()
+job = {"id": sid, "index": 3, "t": time.time(), "event": threading.Event(), "result": None, "error": ""}
+m.export_slide(papp, job)
+check("durante la presentazione: anteprima servita dalle preparate, nessun export", job["result"] == b"PNG-pre-3" and pp.Slides.exports == [1, 2, 3, 4] and job["error"] == "")
+check("durante la presentazione non si prepara nulla", m.preload_step(papp) is False)
+papp2 = PApp([PPres(os.path.join(tempfile.gettempdir(), "deck-test2.pptx"), 3)]); m.PRELOAD = False
+check("opzione spenta: nessun export in anticipo", m.preload_step(papp2) is False and papp2.pl[0].Slides.exports == [])
+m.PRELOAD = True
+pp.Slides.Count = 5; papp3 = PApp([pp]); n0 = len(pp.Slides.exports)
+while m.preload_step(papp3): pass
+check("presentazione cambiata (5 slide): anteprime rifatte", len(pp.Slides.exports) == n0 + 5)
+class PRotta(PPres):
+    def __init__(self):
+        PPres.__init__(self, "rotta.pptx", 2)
+        class Sl(PSlides):
+            def __call__(s, i):
+                class S:
+                    def Export(self_, *a): raise RuntimeError("vista protetta")
+                return S()
+        self.Slides = Sl(2)
+pr = PApp([PRotta()])
+check("export in anticipo che fallisce: un solo tentativo, poi si lascia fare durante la presentazione", m.preload_step(pr) is True and m.preload_step(pr) is False and any("non riuscite" in l for l in m.LOG_LINES))
+check("anticipo: opzione nelle impostazioni, accettata, salvata e valore non valido rifiutato", json.loads(get("/settings.json")[3]).get("preload") is True and post("/settings", {"ui": {"bar": True}, "preload": False})[0] == 200 and m.PRELOAD is False and post("/settings", {"ui": {"bar": True}, "preload": "no"})[0] == 400)
+post("/settings", {"ui": {"bar": True}, "preload": True})
+check("anticipo: opzione nella pagina di gestione e in tutte le lingue", b'id="u_preload"' in get("/start")[3] and all("o_preload" in m.I18N["langs"][l] for l in m.I18N["langs"]))
+
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)
 node = shutil.which("node")
 if node:
