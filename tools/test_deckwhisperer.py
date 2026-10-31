@@ -273,6 +273,31 @@ j2 = {"id": m.win_id(wp, 1), "index": 2, "t": time.time(), "event": threading.Ev
 m.IMGQ.put(j1); m.IMGQ.put(j2); m.process_image_jobs(appp)
 check("click arrivato durante un export: eseguito prima della prossima anteprima", ordine == ["export1", "prev", "export2"])
 
+# ---- fuoco di PowerPoint dopo le anteprime (4.2)
+class FakeFg:
+    def __init__(self, seq): self.seq = list(seq); self.set_to = []
+    def get(self): return self.seq.pop(0) if len(self.seq) > 1 else self.seq[0]
+    def put(self, h): self.set_to.append(h); return True
+PIDS = {100: 1, 200: 1, 300: 2, 0: 0}      # 100 e 200: finestre di PowerPoint (processo 1), 300: altro programma
+def prova_fuoco(seq, before=(100, True)):
+    f = FakeFg(seq)
+    r = m.focus_restore(None, before, get_fg=f.get, pid_of=lambda h: PIDS.get(h, 9), set_fg=f.put, pp_pids={1}, wait=0)
+    return r, f.set_to
+check("fuoco: invariato dopo l'anteprima -> nessun intervento", prova_fuoco([100, 100]) == (False, []))
+check("fuoco: perso verso il nulla (0) -> restituito a PowerPoint", prova_fuoco([0]) == (True, [100]))
+check("fuoco: passato a un'altra finestra di PowerPoint -> restituito", prova_fuoco([200]) == (True, [100]))
+check("fuoco: perso un attimo dopo l'export (secondo controllo) -> restituito", prova_fuoco([100, 0]) == (True, [100]))
+check("fuoco: ora e' di un altro programma -> non si interviene", prova_fuoco([300]) == (False, []))
+check("fuoco: prima non era di PowerPoint -> non si interviene", prova_fuoco([0], before=(300, False)) == (False, []))
+m.FOCUS_KEEP = False
+check("fuoco: opzione spenta -> nessuno snapshot", m.focus_snapshot(None) == (0, False))
+m.FOCUS_KEEP = True
+check("fuoco: l'opzione e' nelle impostazioni", json.loads(get("/settings.json")[3]).get("focus") is True)
+check("fuoco: impostazione accettata e salvata", post("/settings", {"ui": {"bar": True}, "focus": False})[0] == 200 and m.FOCUS_KEEP is False and json.loads(get("/settings.json")[3])["focus"] is False)
+post("/settings", {"ui": {"bar": True}, "focus": True})
+check("fuoco: valore non booleano rifiutato", post("/settings", {"ui": {"bar": True}, "focus": "si"})[0] == 400)
+check("fuoco: opzione presente nella pagina di gestione e in tutte le lingue", b'id="u_focus"' in get("/start")[3] and all(("o_focus" in m.I18N["langs"][l]) for l in m.I18N["langs"]))
+
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)
 node = shutil.which("node")
 if node:

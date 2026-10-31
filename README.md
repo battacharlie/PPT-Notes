@@ -19,6 +19,10 @@ Powered by [MyWebTvLive.com](https://www.mywebtvlive.com) · Made in Bolognina
 **Releases** → `mefistofele.exe` (Windows 10/11 + PowerPoint) e `mefistofele-mac.zip` (macOS 12+ + PowerPoint per Mac). Ogni release contiene anche `SHA256SUMS.txt` e i sei manuali `MANUAL-xx.md`.
 Ultima versione in sviluppo: **Actions → Compila**, l'esecuzione più recente, in fondo **mefistofele-windows** e **mefistofele-mac**.
 
+## Novità della 3.4 / What's new in 3.4 (serie 3 / 3 series)
+- **Tastiera sempre su PowerPoint / Keyboard stays on PowerPoint** (Windows): dopo ogni anteprima il programma restituisce il fuoco a PowerPoint se lo aveva, senza bisogno di un click del mouse. Non interviene se passi a un altro programma. Si disattiva dalla pagina di gestione ("Mantieni PowerPoint in primo piano") / after each preview the program gives the focus back to PowerPoint if it had it, no mouse click needed. It does not interfere if you switch to another program. Can be switched off on the management page ("Keep PowerPoint in front").
+- Ultima della serie 3: solo telefoni nella stessa rete, senza accesso remoto (la 4 lo aggiunge) / Last of the 3 series: same-network phones only, no remote access (version 4 adds it).
+
 ## Novità della 3.3 / What's new in 3.3 (serie 3 / 3 series)
 - **Click ravvicinati più affidabili / More reliable fast clicks**: i comandi dal telefono hanno la precedenza sulle anteprime, non vengono più scartati dopo 2 secondi e "avanti/indietro" consecutivi vengono sommati / commands take priority over previews, are no longer dropped after 2 seconds, and consecutive next/previous clicks are added up.
 - **Registro più utile / Better log**: comandi scartati, riepiloghi dei click ravvicinati e anteprime lente / discarded commands, fast-click summaries and slow previews.
