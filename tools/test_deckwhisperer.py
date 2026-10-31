@@ -359,6 +359,31 @@ check("anticipo: opzione nelle impostazioni, accettata, salvata e valore non val
 post("/settings", {"ui": {"bar": True}, "preload": True})
 check("anticipo: opzione nella pagina di gestione e in tutte le lingue", b'id="u_preload"' in get("/start")[3] and all("o_preload" in m.I18N["langs"][l] for l in m.I18N["langs"]))
 
+# ---- diagnostica del fuoco: registro dei cambi di finestra
+fl_state = {}
+fl_seq = [10, 10, 20, 0, 20]
+fl_info = lambda h: ("POWERPNT.EXE", "Presentazione") if h == 10 else ("mefistofele.exe", "Gestione") if h == 20 else ("?", "")
+m.FOCUS_LOG = False
+n0 = len(m.LOG_LINES)
+check("diagnostica spenta: non scrive nulla", m.focus_log_step(fl_state, lambda: 10, fl_info) is False and len(m.LOG_LINES) == n0)
+m.FOCUS_LOG = True
+m.FOCUS_LOG_COUNT[0] = 0
+fl_state = {}
+res = [m.focus_log_step(fl_state, lambda h=h: h, fl_info) for h in fl_seq]
+check("diagnostica: scrive solo quando la finestra cambia", res == [True, False, True, True, True])
+tail = [l for l in m.LOG_LINES if "Fuoco:" in l][-4:]
+import re as _re
+check("diagnostica: programma, titolo e millisecondi nella riga", 'Fuoco: POWERPNT.EXE - "Presentazione"' in tail[0] and "nessuna finestra" in tail[2] and _re.search(r"\d\d:\d\d:\d\d\.\d{3} Fuoco", tail[0]))
+m.FOCUS_LOG_COUNT[0] = m.FOCUS_LOG_MAX
+n1 = len(m.LOG_LINES)
+m.focus_log_step({}, lambda: 99, fl_info)
+check("diagnostica: limite di righe rispettato", len(m.LOG_LINES) == n1)
+m.FOCUS_LOG_COUNT[0] = 0
+m.FOCUS_LOG = False
+check("diagnostica: impostazione accettata, salvata e valore non valido rifiutato", json.loads(get("/settings.json")[3]).get("focuslog") is False and post("/settings", {"ui": {"bar": True}, "focuslog": True})[0] == 200 and m.FOCUS_LOG is True and json.loads(get("/settings.json")[3])["focuslog"] is True and post("/settings", {"ui": {"bar": True}, "focuslog": "si"})[0] == 400)
+post("/settings", {"ui": {"bar": True}, "focuslog": False})
+check("diagnostica: spenta di nuovo, opzione nella pagina e in tutte le lingue", m.FOCUS_LOG is False and b'id="u_focuslog"' in get("/start")[3] and all("o_focuslog_d" in m.I18N["langs"][l] for l in m.I18N["langs"]))
+
 # ---- pagina: JavaScript eseguito con un browser simulato (serve Node.js)
 node = shutil.which("node")
 if node:

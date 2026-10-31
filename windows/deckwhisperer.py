@@ -79,6 +79,9 @@ NO_CONTROL = False                           # --no-control: comandi spenti, qua
 SETTINGS_LOCK = threading.Lock()
 PRELOAD = True                                # prepara tutte le anteprime prima della presentazione
 FOCUS_KEEP = True                             # dopo ogni anteprima rida il fuoco a PowerPoint se era suo
+FOCUS_LOG = False                             # diagnostica: scrive nel registro ogni cambio di finestra in primo piano
+FOCUS_LOG_MAX = 3000
+FOCUS_LOG_COUNT = [0]
 def load_i18n():
     """Traduzioni dell'interfaccia (assets/i18n.json): inglese, italiano, francese, spagnolo, arabo, cinese."""
     try:
@@ -181,8 +184,10 @@ def load_settings():
                 data = json.load(f)
         except Exception:
             continue
-        global NIC_IP, LANG, FOCUS_KEEP, PRELOAD
+        global NIC_IP, LANG, FOCUS_KEEP, PRELOAD, FOCUS_LOG
         ui = data.get("ui", {})
+        if isinstance(data.get("focuslog"), bool):
+            FOCUS_LOG = data["focuslog"]
         if isinstance(data.get("focus"), bool):
             FOCUS_KEEP = data["focus"]
         if isinstance(data.get("preload"), bool):
@@ -199,7 +204,7 @@ def load_settings():
 
 
 def save_settings():
-    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG, "focus": FOCUS_KEEP, "preload": PRELOAD}, ensure_ascii=False, indent=1)
+    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG, "focus": FOCUS_KEEP, "preload": PRELOAD, "focuslog": FOCUS_LOG}, ensure_ascii=False, indent=1)
     for pth in settings_paths():
         try:
             with open(pth, "w", encoding="utf-8") as f:
@@ -213,7 +218,7 @@ def save_settings():
 
 def apply_settings(body):
     """Applica le scelte arrivate dalla pagina di avvio. Ritorna False se non valide."""
-    global PIN, NIC_IP, LANG, FOCUS_KEEP, PRELOAD
+    global PIN, NIC_IP, LANG, FOCUS_KEEP, PRELOAD, FOCUS_LOG
     ui = body.get("ui")
     if not isinstance(ui, dict) or any(k in ui and not isinstance(ui[k], bool) for k in UI_KEYS):
         return False
@@ -228,7 +233,8 @@ def apply_settings(body):
         return False
     focus = body.get("focus", FOCUS_KEEP)
     preload = body.get("preload", PRELOAD)
-    if not isinstance(focus, bool) or not isinstance(preload, bool):
+    focuslog = body.get("focuslog", FOCUS_LOG)
+    if not isinstance(focus, bool) or not isinstance(preload, bool) or not isinstance(focuslog, bool):
         return False
     with SETTINGS_LOCK:
         for k in UI_KEYS:
@@ -239,6 +245,9 @@ def apply_settings(body):
         LANG = lang
         FOCUS_KEEP = focus
         PRELOAD = preload
+        if focuslog and not FOCUS_LOG:
+            FOCUS_LOG_COUNT[0] = 0
+        FOCUS_LOG = focuslog
         save_settings()
     update_base_url()
     refresh_state()
@@ -375,12 +384,18 @@ LOG_EV_COUNT = [0]
 CMD_MAX_AGE = 15.0     # un comando piu' vecchio di cosi' non ha piu' senso: si scarta, ma si scrive nel registro
 
 
-def log_ev(msg):
-    """Come log(), ma senza togliere i messaggi uguali (servono i tempi): al massimo 300 righe per avvio."""
-    if LOG_EV_COUNT[0] >= 300:
+def log_ev(msg, diag=False):
+    """Come log(), ma senza togliere i messaggi uguali (servono i tempi): al massimo 300 righe per avvio.
+    Le righe di diagnostica (diag=True) hanno i millisecondi e un limite a parte (3000)."""
+    cnt, cap = (FOCUS_LOG_COUNT, FOCUS_LOG_MAX) if diag else (LOG_EV_COUNT, 300)
+    if cnt[0] >= cap:
         return
-    LOG_EV_COUNT[0] += 1
-    line = "%s %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg)
+    cnt[0] += 1
+    now = time.time()
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
+    if diag:
+        stamp += ".%03d" % int((now % 1) * 1000)
+    line = "%s %s" % (stamp, msg)
     LOG_LINES.append(line)
     try:
         print(" [registro] " + msg)
@@ -429,9 +444,13 @@ def drain_commands(runner):
             if b["action"] == "step":
                 act = "next" if b["n"] > 0 else "prev"
                 for _ in range(abs(b["n"])):
+                    if FOCUS_LOG:
+                        log_ev("Comando: %s" % act, True)
                     runner({"id": b["id"], "action": act})
                     done += 1
             else:
+                if FOCUS_LOG:
+                    log_ev("Comando: %s" % b.get("action"), True)
                 runner(b)
                 done += 1
         except Exception as e:
@@ -692,6 +711,63 @@ def _window_pid(hwnd):
     return int(pid.value)
 
 
+def _window_info(hwnd):
+    """(nome del programma, titolo) della finestra, per il registro di diagnostica."""
+    import ctypes
+    from ctypes import wintypes
+    title = exe = ""
+    try:
+        buf = ctypes.create_unicode_buffer(256)
+        ctypes.windll.user32.GetWindowTextW(wintypes.HWND(hwnd), buf, 256)
+        title = buf.value
+    except Exception:
+        pass
+    try:
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.restype = wintypes.HANDLE
+        k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        h = k.OpenProcess(0x1000, False, _window_pid(hwnd))   # PROCESS_QUERY_LIMITED_INFORMATION
+        if h:
+            b = ctypes.create_unicode_buffer(520)
+            n = wintypes.DWORD(520)
+            if k.QueryFullProcessImageNameW(h, 0, b, ctypes.byref(n)):
+                exe = os.path.basename(b.value)
+            k.CloseHandle(h)
+    except Exception:
+        pass
+    return exe, title
+
+
+def focus_log_step(state, get_fg, info):
+    """Un controllo del diagnostico: se la finestra in primo piano e' cambiata scrive una riga.
+    Ritorna True se ha scritto. Con l'opzione spenta non fa nulla."""
+    if not FOCUS_LOG:
+        state["hwnd"] = None
+        return False
+    hwnd = get_fg()
+    if hwnd == state.get("hwnd"):
+        return False
+    state["hwnd"] = hwnd
+    if not hwnd:
+        log_ev("Fuoco: nessuna finestra", True)
+        return True
+    exe, title = info(hwnd)
+    log_ev('Fuoco: %s - "%s"' % (exe or "?", title[:80]), True)
+    return True
+
+
+def focus_log_loop():
+    state = {}
+    while True:
+        try:
+            focus_log_step(state, _fg_window, _window_info)
+        except Exception:
+            pass
+        time.sleep(0.05 if FOCUS_LOG else 0.5)
+
+
 def _set_fg_window(hwnd):
     """SetForegroundWindow, con il trucco dell'accodamento dell'input se Windows rifiuta."""
     import ctypes
@@ -781,6 +857,8 @@ def process_image_jobs(app):
         try:
             t_exp = time.time()
             fbefore = focus_snapshot(app)
+            if FOCUS_LOG:
+                log_ev("Anteprima: esporto la slide %s" % job["index"], True)
             export_slide(app, job)
             focus_restore(app, fbefore)
             if time.time() - t_exp > 1.5:
@@ -1197,6 +1275,7 @@ button.stop{background:#8a3b2e}.warnp{color:#a4381f;font-weight:600}.okp{color:v
 <label class="opt"><input type="checkbox" id="u_goto"><div><b data-i18n="o_goto">Go to slide</b><span data-i18n="o_goto_d"></span></div></label>
 <label class="opt"><input type="checkbox" id="u_ctl"><div><b data-i18n="o_ctl">Navigation</b><span id="ctl_d" data-i18n="o_ctl_d"></span></div></label>
 <label class="opt" id="preloadopt"><input type="checkbox" id="u_preload"><div><b data-i18n="o_preload">Prepare previews in advance</b><span data-i18n="o_preload_d"></span></div></label>
+<label class="opt" id="focuslogopt"><input type="checkbox" id="u_focuslog"><div><b data-i18n="o_focuslog">Diagnostics: log window focus</b><span data-i18n="o_focuslog_d"></span></div></label>
 <label class="opt" id="focusopt"><input type="checkbox" id="u_focus"><div><b data-i18n="o_focus">Keep PowerPoint in front</b><span data-i18n="o_focus_d"></span></div></label>
 <label class="opt lockopt"><input type="checkbox" id="u_lock"><div><b data-i18n="o_lock">Lock remote screen</b><span data-i18n="o_lock_d"></span></div></label>
 <div class="pin"><label for="pin"><b data-i18n="pin_label">PIN for the controls (optional)</b></label>
@@ -1235,7 +1314,7 @@ async function save(){
   const ui = {}; K.forEach(k => { ui[k] = $("u_" + k).checked; });
   try {
     const r = await fetch("/settings", { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value, focus: $("u_focus").checked, preload: $("u_preload").checked }) });
+      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value, focus: $("u_focus").checked, preload: $("u_preload").checked, focuslog: $("u_focuslog").checked }) });
     flash(r.ok ? "saved" : "invalid");
     if (r.ok) { lang = $("langsel").value; applyLang(); load(false); }
   } catch(e) { flash("unreach"); }
@@ -1247,6 +1326,7 @@ function load(first){
       $("pin").value = d.pin || "";
       $("u_focus").checked = d.focus !== false; $("focusopt").style.display = d.focus_ok === false ? "none" : "";
       $("u_preload").checked = d.preload !== false; $("preloadopt").style.display = d.preload_ok === false ? "none" : "";
+      $("u_focuslog").checked = d.focuslog === true; $("focuslogopt").style.display = d.focuslog_ok === false ? "none" : "";
       const sel = $("nic"); sel.innerHTML = ""; autoIp = d.auto_ip || "";
       const auto = document.createElement("option"); auto.value = ""; sel.appendChild(auto);
       d.nics.forEach(n => { const o = document.createElement("option"); o.value = n.ip; o.textContent = n.name + " - " + n.ip; sel.appendChild(o); });
@@ -1261,7 +1341,7 @@ function load(first){
   }).catch(() => flash("unreach"));
 }
 K.forEach(k => { $("u_" + k).onchange = save; });
-$("u_focus").onchange = save; $("u_preload").onchange = save;
+$("u_focus").onchange = save; $("u_preload").onchange = save; $("u_focuslog").onchange = save;
 $("nic").onchange = save; $("langsel").onchange = save;
 $("savepin").onclick = save;
 $("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
@@ -1780,7 +1860,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "nics": list_nics(), "nic": NIC_IP, "auto_ip": primary_ip(),
                                    "lang": LANG, "langs": I18N["names"],
                                    "focus": FOCUS_KEEP, "focus_ok": sys.platform == "win32",
-                                   "preload": PRELOAD, "preload_ok": sys.platform == "win32"}).encode("utf-8"))
+                                   "preload": PRELOAD, "preload_ok": sys.platform == "win32",
+                                   "focuslog": FOCUS_LOG, "focuslog_ok": sys.platform == "win32"}).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))
@@ -2380,6 +2461,8 @@ def main():
     update_base_url()
     target = poll_demo if args.demo else (poll_powerpoint_mac if IS_MAC else poll_powerpoint)
     threading.Thread(target=target, args=(args.interval,), daemon=True).start()
+    if sys.platform == "win32" and not args.demo:
+        threading.Thread(target=focus_log_loop, daemon=True).start()
 
     try:
         import ctypes
