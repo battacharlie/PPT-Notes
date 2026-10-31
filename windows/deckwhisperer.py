@@ -77,6 +77,7 @@ LANG = "en"                                  # lingua predefinita dei telefoni (
 PORT = 8080              # cosa possono vedere i telefoni (scelto dal PC)
 NO_CONTROL = False                           # --no-control: comandi spenti, qualunque sia la scelta
 SETTINGS_LOCK = threading.Lock()
+FOCUS_KEEP = True                             # dopo ogni anteprima rida il fuoco a PowerPoint se era suo
 def load_i18n():
     """Traduzioni dell'interfaccia (assets/i18n.json): inglese, italiano, francese, spagnolo, arabo, cinese."""
     try:
@@ -179,8 +180,10 @@ def load_settings():
                 data = json.load(f)
         except Exception:
             continue
-        global NIC_IP, LANG
+        global NIC_IP, LANG, FOCUS_KEEP
         ui = data.get("ui", {})
+        if isinstance(data.get("focus"), bool):
+            FOCUS_KEEP = data["focus"]
         for k in UI_KEYS:
             if isinstance(ui.get(k), bool):
                 UI[k] = ui[k]
@@ -193,7 +196,7 @@ def load_settings():
 
 
 def save_settings():
-    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG}, ensure_ascii=False, indent=1)
+    data = json.dumps({"ui": UI, "pin": PIN, "nic": NIC_IP, "lang": LANG, "focus": FOCUS_KEEP}, ensure_ascii=False, indent=1)
     for pth in settings_paths():
         try:
             with open(pth, "w", encoding="utf-8") as f:
@@ -207,7 +210,7 @@ def save_settings():
 
 def apply_settings(body):
     """Applica le scelte arrivate dalla pagina di avvio. Ritorna False se non valide."""
-    global PIN, NIC_IP, LANG
+    global PIN, NIC_IP, LANG, FOCUS_KEEP
     ui = body.get("ui")
     if not isinstance(ui, dict) or any(k in ui and not isinstance(ui[k], bool) for k in UI_KEYS):
         return False
@@ -220,6 +223,9 @@ def apply_settings(body):
     lang = body.get("lang", LANG)
     if lang not in LANG_CODES:
         return False
+    focus = body.get("focus", FOCUS_KEEP)
+    if not isinstance(focus, bool):
+        return False
     with SETTINGS_LOCK:
         for k in UI_KEYS:
             if k in ui:
@@ -227,6 +233,7 @@ def apply_settings(body):
         PIN = pin.strip()
         NIC_IP = nic
         LANG = lang
+        FOCUS_KEEP = focus
         save_settings()
     update_base_url()
     refresh_state()
@@ -575,6 +582,95 @@ def export_slide(app, job):
     job["event"].set()
 
 
+def _fg_window():
+    import ctypes
+    return int(ctypes.windll.user32.GetForegroundWindow() or 0)
+
+
+def _window_pid(hwnd):
+    import ctypes
+    from ctypes import wintypes
+    pid = wintypes.DWORD(0)
+    ctypes.windll.user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
+    return int(pid.value)
+
+
+def _set_fg_window(hwnd):
+    """SetForegroundWindow, con il trucco dell'accodamento dell'input se Windows rifiuta."""
+    import ctypes
+    u = ctypes.windll.user32
+    if u.SetForegroundWindow(hwnd):
+        return True
+    try:
+        fg = u.GetForegroundWindow()
+        t1 = u.GetWindowThreadProcessId(fg, None)
+        t2 = ctypes.windll.kernel32.GetCurrentThreadId()
+        if t1 and t1 != t2:
+            u.AttachThreadInput(t2, t1, True)
+            ok = u.SetForegroundWindow(hwnd)
+            u.AttachThreadInput(t2, t1, False)
+            return bool(ok)
+    except Exception:
+        pass
+    return False
+
+
+def powerpoint_pids(app):
+    """Processi delle finestre di presentazione (di solito uno solo)."""
+    pids = set()
+    for i in range(1, int(app.SlideShowWindows.Count) + 1):
+        try:
+            h = app.SlideShowWindows(i).HWND
+            if callable(h):
+                h = h()
+            pids.add(_window_pid(int(h)))
+        except Exception:
+            pass
+    pids.discard(0)
+    return pids
+
+
+def focus_snapshot(app):
+    """(finestra in primo piano, True se appartiene a PowerPoint). Mai un errore: senza Windows ritorna (0, False)."""
+    if not FOCUS_KEEP or sys.platform != "win32":
+        return 0, False
+    try:
+        fg = _fg_window()
+        return fg, bool(fg) and _window_pid(fg) in powerpoint_pids(app)
+    except Exception:
+        return 0, False
+
+
+def focus_restore(app, before, get_fg=None, pid_of=None, set_fg=None, pp_pids=None, wait=0.1):
+    """Dopo un'operazione che puo' togliere il fuoco (export di un'anteprima): se prima era di PowerPoint e ora
+    non lo e' piu', lo rida. Non interviene se ora e' in primo piano un'altra applicazione (scelta dell'utente)."""
+    hwnd, was_pp = before
+    if not (hwnd and was_pp):
+        return False
+    get_fg = get_fg or _fg_window
+    pid_of = pid_of or _window_pid
+    set_fg = set_fg or _set_fg_window
+    try:
+        pids = pp_pids if pp_pids is not None else powerpoint_pids(app)
+        own = os.getpid()
+        for attempt in range(2):
+            now = get_fg()
+            if now == hwnd:
+                if attempt == 0:
+                    if wait:
+                        time.sleep(wait)      # PowerPoint a volte toglie il fuoco un attimo dopo l'export
+                    continue
+                return False
+            if now == 0 or pid_of(now) in pids or pid_of(now) == own:
+                ok = set_fg(hwnd)
+                log("Fuoco restituito a PowerPoint dopo un'anteprima" + ("" if ok else " (Windows ha rifiutato)"))
+                return bool(ok)
+            return False                  # un'altra applicazione ha il fuoco: non e' compito nostro
+    except Exception:
+        return False
+    return False
+
+
 def process_image_jobs(app):
     while True:
         drain_commands(lambda c: run_command(app, c))   # i comandi hanno la precedenza sulle anteprime
@@ -587,7 +683,9 @@ def process_image_jobs(app):
             continue
         try:
             t_exp = time.time()
+            fbefore = focus_snapshot(app)
             export_slide(app, job)
+            focus_restore(app, fbefore)
             if time.time() - t_exp > 1.5:
                 log_ev("Anteprima lenta: slide %s in %.1f s" % (job["index"], time.time() - t_exp))
         except Exception as e:
@@ -1000,6 +1098,7 @@ button.stop{background:#8a3b2e}.warnp{color:#a4381f;font-weight:600}.okp{color:v
 <label class="opt"><input type="checkbox" id="u_next"><div><b data-i18n="o_next">Next slide</b><span data-i18n="o_next_d"></span></div></label>
 <label class="opt"><input type="checkbox" id="u_goto"><div><b data-i18n="o_goto">Go to slide</b><span data-i18n="o_goto_d"></span></div></label>
 <label class="opt"><input type="checkbox" id="u_ctl"><div><b data-i18n="o_ctl">Navigation</b><span id="ctl_d" data-i18n="o_ctl_d"></span></div></label>
+<label class="opt" id="focusopt"><input type="checkbox" id="u_focus"><div><b data-i18n="o_focus">Keep PowerPoint in front</b><span data-i18n="o_focus_d"></span></div></label>
 <label class="opt lockopt"><input type="checkbox" id="u_lock"><div><b data-i18n="o_lock">Lock remote screen</b><span data-i18n="o_lock_d"></span></div></label>
 <div class="pin"><label for="pin"><b data-i18n="pin_label">PIN for the controls (optional)</b></label>
 <input id="pin" maxlength="20" inputmode="numeric" autocomplete="off"><button id="savepin" data-i18n="pin_save">Save PIN</button></div>
@@ -1037,7 +1136,7 @@ async function save(){
   const ui = {}; K.forEach(k => { ui[k] = $("u_" + k).checked; });
   try {
     const r = await fetch("/settings", { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value }) });
+      body: JSON.stringify({ ui: ui, pin: $("pin").value.trim(), nic: $("nic").value, lang: $("langsel").value, focus: $("u_focus").checked }) });
     flash(r.ok ? "saved" : "invalid");
     if (r.ok) { lang = $("langsel").value; applyLang(); load(false); }
   } catch(e) { flash("unreach"); }
@@ -1047,6 +1146,7 @@ function load(first){
     if (first) {
       K.forEach(k => { $("u_" + k).checked = k === "lock" ? d.ui[k] === true : d.ui[k] !== false; });
       $("pin").value = d.pin || "";
+      $("u_focus").checked = d.focus !== false; $("focusopt").style.display = d.focus_ok === false ? "none" : "";
       const sel = $("nic"); sel.innerHTML = ""; autoIp = d.auto_ip || "";
       const auto = document.createElement("option"); auto.value = ""; sel.appendChild(auto);
       d.nics.forEach(n => { const o = document.createElement("option"); o.value = n.ip; o.textContent = n.name + " - " + n.ip; sel.appendChild(o); });
@@ -1061,6 +1161,7 @@ function load(first){
   }).catch(() => flash("unreach"));
 }
 K.forEach(k => { $("u_" + k).onchange = save; });
+$("u_focus").onchange = save;
 $("nic").onchange = save; $("langsel").onchange = save;
 $("savepin").onclick = save;
 $("pin").addEventListener("keydown", e => { if (e.key === "Enter") save(); });
@@ -1577,7 +1678,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json; charset=utf-8",
                        json.dumps({"ui": UI, "pin": PIN, "no_control": NO_CONTROL, "url": BASE_URL,
                                    "nics": list_nics(), "nic": NIC_IP, "auto_ip": primary_ip(),
-                                   "lang": LANG, "langs": I18N["names"]}).encode("utf-8"))
+                                   "lang": LANG, "langs": I18N["names"],
+                                   "focus": FOCUS_KEEP, "focus_ok": sys.platform == "win32"}).encode("utf-8"))
         elif path == "/state":
             _, data = snapshot()
             self._send(200, "application/json; charset=utf-8", data.encode("utf-8"))
