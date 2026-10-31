@@ -657,7 +657,11 @@ def export_slide(app, job):
                 data = None
             if data:
                 job["error"] = ""
+                if FOCUS_LOG:
+                    log_ev("Anteprima slide %s: gia' pronta, nessuna esportazione" % job["index"], True)
                 break
+            if FOCUS_LOG:
+                log_ev("Anteprima slide %s: ESPORTAZIONE durante la presentazione" % job["index"], True)
             w = 960
             try:
                 h = int(round(w * float(pres.PageSetup.SlideHeight) / float(pres.PageSetup.SlideWidth)))
@@ -857,8 +861,6 @@ def process_image_jobs(app):
         try:
             t_exp = time.time()
             fbefore = focus_snapshot(app)
-            if FOCUS_LOG:
-                log_ev("Anteprima: esporto la slide %s" % job["index"], True)
             export_slide(app, job)
             focus_restore(app, fbefore)
             if time.time() - t_exp > 1.5:
